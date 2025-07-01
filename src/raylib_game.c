@@ -1,9 +1,7 @@
 /*******************************************************************************************
 *
-*   raylib game template
-*
-*   <Game title>
-*   <Game description>
+*   MC.C
+*   An Open World Voxel Game
 *
 *   This game has been created using raylib (www.raylib.com)
 *   raylib is licensed under an unmodified zlib/libpng license (View raylib.h for details)
@@ -59,7 +57,7 @@ int main(void)
 {
     // Initialization
     //---------------------------------------------------------
-    InitWindow(screenWidth, screenHeight, "raylib game template");
+    InitWindow(screenWidth, screenHeight, "MC.C");
 
     InitAudioDevice();      // Initialize audio device
 
