@@ -57,26 +57,39 @@ cmake --build build
 
 - cmake will automatically download a current release of raylib but if you want to use your local version you can pass `-DFETCHCONTENT_SOURCE_DIR_RAYLIB=<dir_with_raylib>` 
 
-## $(Game Title)
+## MC.C
 
-![$(Game Title)](screenshots/screenshot000.png "$(Game Title)")
+![Voxel World](screenshots/screenshot000.png "Voxel World")
 
 ### Description
 
-$(Your Game Description)
+An open-world voxel game built with raylib, featuring Minecraft-like gameplay with infinite terrain generation, block building, and first-person exploration. Built using a modular chunk system for efficient rendering and world management.
 
 ### Features
 
- - $(Game Feature 01)
- - $(Game Feature 02)
- - $(Game Feature 03)
+ - **First-person 3D exploration** with smooth WASD movement and mouse look
+ - **Infinite voxel world** with chunk-based loading and procedural terrain generation
+ - **Block interaction system** - place and destroy blocks with left/right mouse clicks
+ - **Multiple block types** - grass, dirt, stone, wood, leaves, water
+ - **Hotbar inventory** with 9 slots for different block types
+ - **Realistic physics** - gravity, collision detection, and jumping
+ - **Optimized rendering** - face culling, frustum culling, and efficient mesh generation
+ - **Procedural terrain** - hills, valleys, water bodies, and tree generation
 
 ### Controls
 
 Keyboard:
- - $(Game Control 01)
- - $(Game Control 02)
- - $(Game Control 03)
+ - **WASD** - Move player
+ - **SPACE** - Jump
+ - **SHIFT** - Run/Sprint
+ - **1-9** - Select block type from hotbar
+ - **ESC** - Toggle cursor lock/unlock
+ - **ENTER** - Return to main menu
+
+Mouse:
+ - **Mouse Movement** - Look around (first-person camera)
+ - **Left Click** - Break/destroy blocks
+ - **Right Click** - Place selected block
 
 ### Screenshots
 
