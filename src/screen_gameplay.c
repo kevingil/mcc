@@ -49,8 +49,12 @@ void InitGameplayScreen(void)
         InitVoxelWorld(&world);
         
         // Initialize player at a good starting position
-        Vector3 startPosition = {0, 80, 0}; // Start above terrain
+        Vector3 startPosition = {0, 100, 0}; // Start safely above max terrain height (62+32=94)
         InitPlayer(&player, startPosition);
+        
+        // Load initial chunks near spawn BEFORE player physics start
+        // otherwise player will fall through the world forever
+        LoadChunksAroundPlayer(&world, startPosition);
         
         // Initialize renderer
         InitVoxelRenderer();
@@ -64,11 +68,11 @@ void UpdateGameplayScreen(void)
 {
     framesCounter++;
     
-    // Update player (handles input, physics, interaction)
-    UpdatePlayer(&player, &world);
-    
     // Update world (chunk loading/unloading)
     UpdateVoxelWorld(&world, player.position);
+    
+    // Update player (handles input, physics, interaction)
+    UpdatePlayer(&player, &world);
     
     // Exit to menu
     if (IsKeyPressed(KEY_ENTER) && IsCursorOnScreen())
@@ -113,6 +117,19 @@ void DrawGameplayScreen(void)
     DrawText(TextFormat("Chunk: (%d, %d) | Loaded Chunks: %d", 
              playerChunk.x, playerChunk.z, world.chunkCount), 
              10, 50, 20, WHITE);
+    
+    // Debug: Check if current chunk is loaded
+    Chunk* currentChunk = GetChunk(&world, playerChunk);
+    Color chunkStatusColor = currentChunk ? GREEN : RED;
+    DrawText(TextFormat("Current Chunk: %s", currentChunk ? "LOADED" : "NOT LOADED"), 
+             10, 70, 20, chunkStatusColor);
+    
+    // Debug: Check ground block
+    BlockPos groundPos = {(int)player.position.x, (int)(player.position.y - 1), (int)player.position.z};
+    BlockType groundBlock = GetBlock(&world, groundPos);
+    DrawText(TextFormat("Ground Block: %d (%s)", groundBlock, 
+             groundBlock == BLOCK_AIR ? "AIR" : "SOLID"), 
+             10, 90, 20, groundBlock == BLOCK_AIR ? RED : GREEN);
     
     // Controls help (when cursor is visible)
     if (!IsCursorHidden()) {
