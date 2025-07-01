@@ -1,6 +1,6 @@
 /**********************************************************************************************
 *
-*   Voxel Game - Minecraft-like Gameplay Screen
+*   Voxel Game - Open World Voxel Game
 *
 *   Open world voxel game with first-person movement, block interaction, and infinite terrain
 *

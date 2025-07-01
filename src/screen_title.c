@@ -73,7 +73,7 @@ void DrawTitleScreen(void)
     DrawTextEx(font, "VOXEL WORLD", titlePos, font.baseSize*4.0f, 4, WHITE);
     
     // Subtitle
-    DrawText("A Minecraft-like Voxel Game", screenWidth/2 - 160, 180, 24, WHITE);
+    DrawText("An Open World Voxel Game", screenWidth/2 - 160, 180, 24, WHITE);
     
     // Game features
     DrawText("Features:", 100, 250, 20, YELLOW);

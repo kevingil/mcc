@@ -2,11 +2,11 @@
 
 ## MC.C
 
-![Voxel World](screenshots/screenshot000.png "Voxel World")
+![Voxel World](screenshots/image.png "Voxel World")
 
 ### Description
 
-An open-world voxel game built with raylib, featuring Minecraft-like gameplay with infinite terrain generation, block building, and first-person exploration. Built using a modular chunk system for efficient rendering and world management.
+An open-world voxel game built with raylib, featuring open world gameplay with infinite terrain generation, block building, and first-person exploration. Built using a modular chunk system for efficient rendering and world management.
 
 ### Features
 
