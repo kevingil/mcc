@@ -61,11 +61,30 @@ void UpdateTitleScreen(void)
 // Title Screen Draw logic
 void DrawTitleScreen(void)
 {
-    // TODO: Draw TITLE screen here!
-    DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), GREEN);
-    Vector2 pos = { 20, 10 };
-    DrawTextEx(font, "TITLE SCREEN", pos, font.baseSize*3.0f, 4, DARKGREEN);
-    DrawText("PRESS ENTER or TAP to JUMP to GAMEPLAY SCREEN", 120, 220, 20, DARKGREEN);
+    // Draw gradient background
+    DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), 
+                          (Color){135, 206, 235, 255}, (Color){34, 139, 34, 255}); // Sky to grass
+    
+    int screenWidth = GetScreenWidth();
+    int screenHeight = GetScreenHeight();
+    
+    // Main title
+    Vector2 titlePos = { screenWidth/2 - 200, 100 };
+    DrawTextEx(font, "VOXEL WORLD", titlePos, font.baseSize*4.0f, 4, WHITE);
+    
+    // Subtitle
+    DrawText("A Minecraft-like Voxel Game", screenWidth/2 - 160, 180, 24, WHITE);
+    
+    // Game features
+    DrawText("Features:", 100, 250, 20, YELLOW);
+    DrawText("• Infinite procedural world generation", 120, 280, 18, WHITE);
+    DrawText("• First-person exploration and building", 120, 300, 18, WHITE);
+    DrawText("• Multiple block types and physics", 120, 320, 18, WHITE);
+    DrawText("• Optimized chunk-based rendering", 120, 340, 18, WHITE);
+    
+    // Start instruction
+    DrawText("PRESS ENTER TO START", screenWidth/2 - 120, screenHeight - 100, 24, YELLOW);
+    DrawText("Press ENTER or TAP to begin your adventure!", screenWidth/2 - 180, screenHeight - 60, 18, WHITE);
 }
 
 // Title Screen Unload logic

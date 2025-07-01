@@ -1,36 +1,38 @@
 /**********************************************************************************************
 *
-*   raylib - Advance Game template
+*   Voxel Game - Minecraft-like Gameplay Screen
 *
-*   Gameplay Screen Functions Definitions (Init, Update, Draw, Unload)
+*   Open world voxel game with first-person movement, block interaction, and infinite terrain
 *
-*   Copyright (c) 2014-2022 Ramon Santamaria (@raysan5)
-*
-*   This software is provided "as-is", without any express or implied warranty. In no event
-*   will the authors be held liable for any damages arising from the use of this software.
-*
-*   Permission is granted to anyone to use this software for any purpose, including commercial
-*   applications, and to alter it and redistribute it freely, subject to the following restrictions:
-*
-*     1. The origin of this software must not be misrepresented; you must not claim that you
-*     wrote the original software. If you use this software in a product, an acknowledgment
-*     in the product documentation would be appreciated but is not required.
-*
-*     2. Altered source versions must be plainly marked as such, and must not be misrepresented
-*     as being the original software.
-*
-*     3. This notice may not be removed or altered from any source distribution.
+*   Features:
+*   - First-person camera with WASD movement and mouse look
+*   - Voxel world with chunk-based loading and generation
+*   - Block placement and destruction with left/right mouse clicks
+*   - Infinite terrain generation using noise
+*   - Basic block types: grass, dirt, stone, wood, leaves, water
+*   - Hotbar inventory system
+*   - Collision detection and physics
 *
 **********************************************************************************************/
 
 #include "raylib.h"
 #include "screens.h"
+#include "voxel_types.h"
+#include "voxel_world.h"
+#include "voxel_renderer.h"
+#include "world_generation.h"
+#include "player.h"
 
 //----------------------------------------------------------------------------------
 // Module Variables Definition (local)
 //----------------------------------------------------------------------------------
 static int framesCounter = 0;
 static int finishScreen = 0;
+
+// Voxel game systems
+static VoxelWorld world;
+static Player player;
+static bool gameInitialized = false;
 
 //----------------------------------------------------------------------------------
 // Gameplay Screen Functions Definition
@@ -39,18 +41,37 @@ static int finishScreen = 0;
 // Gameplay Screen Initialization logic
 void InitGameplayScreen(void)
 {
-    // TODO: Initialize GAMEPLAY screen variables here!
     framesCounter = 0;
     finishScreen = 0;
+    
+    if (!gameInitialized) {
+        // Initialize voxel world
+        InitVoxelWorld(&world);
+        
+        // Initialize player at a good starting position
+        Vector3 startPosition = {0, 80, 0}; // Start above terrain
+        InitPlayer(&player, startPosition);
+        
+        // Initialize renderer
+        InitVoxelRenderer();
+        
+        gameInitialized = true;
+    }
 }
 
 // Gameplay Screen Update logic
 void UpdateGameplayScreen(void)
 {
-    // TODO: Update GAMEPLAY screen variables here!
-
-    // Press enter or tap to change to ENDING screen
-    if (IsKeyPressed(KEY_ENTER) || IsGestureDetected(GESTURE_TAP))
+    framesCounter++;
+    
+    // Update player (handles input, physics, interaction)
+    UpdatePlayer(&player, &world);
+    
+    // Update world (chunk loading/unloading)
+    UpdateVoxelWorld(&world, player.position);
+    
+    // Exit to menu
+    if (IsKeyPressed(KEY_ENTER) && IsCursorOnScreen())
     {
         finishScreen = 1;
         PlaySound(fxCoin);
@@ -60,17 +81,68 @@ void UpdateGameplayScreen(void)
 // Gameplay Screen Draw logic
 void DrawGameplayScreen(void)
 {
-    // TODO: Draw GAMEPLAY screen here!
-    DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), PURPLE);
-    Vector2 pos = { 20, 10 };
-    DrawTextEx(font, "GAMEPLAY SCREEN", pos, font.baseSize*3.0f, 4, MAROON);
-    DrawText("PRESS ENTER or TAP to JUMP to ENDING SCREEN", 130, 220, 20, MAROON);
+    // Clear background with sky color
+    ClearBackground((Color){135, 206, 235, 255}); // Sky blue
+    
+    // 3D rendering
+    BeginMode3D(player.camera);
+    {
+        // Render the voxel world
+        RenderVoxelWorld(&world, player.camera);
+        
+        // Draw block outline for targeted block
+        if (player.hasTarget) {
+            DrawBlockOutline(player.targetBlock);
+        }
+    }
+    EndMode3D();
+    
+    // 2D UI rendering
+    DrawPlayerUI(&player);
+    
+    // Debug information
+    DrawFPS(10, 10);
+    
+    // Position info
+    DrawText(TextFormat("Position: (%.1f, %.1f, %.1f)", 
+             player.position.x, player.position.y, player.position.z), 
+             10, 30, 20, WHITE);
+    
+    // Chunk info
+    ChunkPos playerChunk = WorldToChunk(player.position);
+    DrawText(TextFormat("Chunk: (%d, %d) | Loaded Chunks: %d", 
+             playerChunk.x, playerChunk.z, world.chunkCount), 
+             10, 50, 20, WHITE);
+    
+    // Controls help (when cursor is visible)
+    if (!IsCursorHidden()) {
+        int screenWidth = GetScreenWidth();
+        int screenHeight = GetScreenHeight();
+        
+        DrawText("VOXEL WORLD GAME", screenWidth/2 - 150, 100, 30, WHITE);
+        DrawText("CONTROLS:", 50, 150, 20, YELLOW);
+        DrawText("WASD - Move", 50, 180, 18, WHITE);
+        DrawText("Mouse - Look around", 50, 200, 18, WHITE);
+        DrawText("SPACE - Jump", 50, 220, 18, WHITE);
+        DrawText("LEFT SHIFT - Run", 50, 240, 18, WHITE);
+        DrawText("LEFT CLICK - Break block", 50, 260, 18, WHITE);
+        DrawText("RIGHT CLICK - Place block", 50, 280, 18, WHITE);
+        DrawText("1-9 - Select block type", 50, 300, 18, WHITE);
+        DrawText("ESC - Toggle cursor lock", 50, 320, 18, WHITE);
+        DrawText("ENTER - Return to menu", 50, 340, 18, WHITE);
+        
+        DrawText("Click to start playing!", screenWidth/2 - 120, screenHeight - 50, 20, YELLOW);
+    }
 }
 
 // Gameplay Screen Unload logic
 void UnloadGameplayScreen(void)
 {
-    // TODO: Unload GAMEPLAY screen variables here!
+    if (gameInitialized) {
+        UnloadVoxelWorld(&world);
+        UnloadVoxelRenderer();
+        gameInitialized = false;
+    }
 }
 
 // Gameplay Screen should finish?
