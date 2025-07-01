@@ -9,6 +9,7 @@ endif()
 # Set minimum policy version to handle compatibility with raylib
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 set(CMAKE_POLICY_DEFAULT_CMP0135 NEW)
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
 include(FetchContent)
 
