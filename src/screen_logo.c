@@ -96,11 +96,11 @@ void UpdateLogoScreen(void)
 
         if (bottomSideRecWidth == 256) state = 3;
     }
-    else if (state == 3)            // State 3: "raylib" text-write animation logic
+    else if (state == 3)            // State 3: "mcc" text-write animation logic
     {
         framesCounter++;
 
-        if (lettersCount < 10)
+        if (lettersCount < 3)
         {
             if (framesCounter/12)   // Every 12 frames, one more letter!
             {
@@ -127,36 +127,39 @@ void UpdateLogoScreen(void)
 // Logo Screen Draw logic
 void DrawLogoScreen(void)
 {
+    // Draw black background
+    ClearBackground(BLACK);
+    
     if (state == 0)         // Draw blinking top-left square corner
     {
-        if ((framesCounter/10)%2) DrawRectangle(logoPositionX, logoPositionY, 16, 16, BLACK);
+        if ((framesCounter/10)%2) DrawRectangle(logoPositionX, logoPositionY, 16, 16, GREEN);
     }
     else if (state == 1)    // Draw bars animation: top and left
     {
-        DrawRectangle(logoPositionX, logoPositionY, topSideRecWidth, 16, BLACK);
-        DrawRectangle(logoPositionX, logoPositionY, 16, leftSideRecHeight, BLACK);
+        DrawRectangle(logoPositionX, logoPositionY, topSideRecWidth, 16, GREEN);        // Top = grass
+        DrawRectangle(logoPositionX, logoPositionY, 16, leftSideRecHeight, BROWN);     // Left side = dirt
     }
     else if (state == 2)    // Draw bars animation: bottom and right
     {
-        DrawRectangle(logoPositionX, logoPositionY, topSideRecWidth, 16, BLACK);
-        DrawRectangle(logoPositionX, logoPositionY, 16, leftSideRecHeight, BLACK);
+        DrawRectangle(logoPositionX, logoPositionY, topSideRecWidth, 16, GREEN);       // Top = grass
+        DrawRectangle(logoPositionX, logoPositionY, 16, leftSideRecHeight, BROWN);    // Left side = dirt
 
-        DrawRectangle(logoPositionX + 240, logoPositionY, 16, rightSideRecHeight, BLACK);
-        DrawRectangle(logoPositionX, logoPositionY + 240, bottomSideRecWidth, 16, BLACK);
+        DrawRectangle(logoPositionX + 240, logoPositionY, 16, rightSideRecHeight, BROWN);  // Right side = dirt
+        DrawRectangle(logoPositionX, logoPositionY + 240, bottomSideRecWidth, 16, BROWN);  // Bottom = dirt
     }
-    else if (state == 3)    // Draw "raylib" text-write animation + "powered by"
+    else if (state == 3)    // Draw "mcc" text-write animation + "voxel world"
     {
-        DrawRectangle(logoPositionX, logoPositionY, topSideRecWidth, 16, Fade(BLACK, alpha));
-        DrawRectangle(logoPositionX, logoPositionY + 16, 16, leftSideRecHeight - 32, Fade(BLACK, alpha));
+        DrawRectangle(logoPositionX, logoPositionY, topSideRecWidth, 16, Fade(GREEN, alpha));           // Top = grass
+        DrawRectangle(logoPositionX, logoPositionY + 16, 16, leftSideRecHeight - 32, Fade(BROWN, alpha)); // Left side = dirt
 
-        DrawRectangle(logoPositionX + 240, logoPositionY + 16, 16, rightSideRecHeight - 32, Fade(BLACK, alpha));
-        DrawRectangle(logoPositionX, logoPositionY + 240, bottomSideRecWidth, 16, Fade(BLACK, alpha));
+        DrawRectangle(logoPositionX + 240, logoPositionY + 16, 16, rightSideRecHeight - 32, Fade(BROWN, alpha)); // Right side = dirt
+        DrawRectangle(logoPositionX, logoPositionY + 240, bottomSideRecWidth, 16, Fade(BROWN, alpha));           // Bottom = dirt
 
-        DrawRectangle(GetScreenWidth()/2 - 112, GetScreenHeight()/2 - 112, 224, 224, Fade(RAYWHITE, alpha));
+        DrawRectangle(GetScreenWidth()/2 - 112, GetScreenHeight()/2 - 112, 224, 224, Fade(BLACK, alpha));
 
-        DrawText(TextSubtext("raylib", 0, lettersCount), GetScreenWidth()/2 - 44, GetScreenHeight()/2 + 48, 50, Fade(BLACK, alpha));
+        DrawText(TextSubtext("mcc", 0, lettersCount), GetScreenWidth()/2 - 32, GetScreenHeight()/2 + 48, 50, Fade(GREEN, alpha));
 
-        if (framesCounter > 20) DrawText("powered by", logoPositionX, logoPositionY - 27, 20, Fade(DARKGRAY, alpha));
+        if (framesCounter > 20) DrawText("reeeee", logoPositionX, logoPositionY - 27, 20, Fade(BROWN, alpha));
     }
 }
 

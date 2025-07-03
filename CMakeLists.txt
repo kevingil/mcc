@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24...3.30)
-project(raylib-game-template)
+project(mcc)
 
 # Set policy for CMake compatibility with older dependencies
 if(POLICY CMP0011)
