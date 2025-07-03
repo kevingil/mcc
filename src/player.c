@@ -21,6 +21,10 @@ void InitPlayer(Player* player, Vector3 startPosition) {
     player->onGround = false;
     player->inWater = false;
     
+    // Initialize camera rotation
+    player->yaw = 0.0f;     // Facing negative Z (forward)
+    player->pitch = 0.0f;   // Looking straight ahead
+    
     // Movement settings
     player->walkSpeed = 5.0f;
     player->runSpeed = 8.0f;
@@ -30,7 +34,7 @@ void InitPlayer(Player* player, Vector3 startPosition) {
     // Initialize camera
     player->camera = (Camera3D){0};
     player->camera.position = Vector3Add(startPosition, (Vector3){0, PLAYER_HEIGHT * 0.9f, 0});
-    player->camera.target = Vector3Add(player->camera.position, (Vector3){0, 0, 1});
+    player->camera.target = Vector3Add(player->camera.position, (Vector3){0, 0, -1}); // Looking forward (negative Z)
     player->camera.up = (Vector3){0, 1, 0};
     player->camera.fovy = 70.0f;
     player->camera.projection = CAMERA_PERSPECTIVE;
@@ -89,21 +93,25 @@ void HandlePlayerMovement(Player* player) {
     if (IsCursorHidden()) {
         Vector3 movement = {0, 0, 0};
         
-        // Get camera direction vectors
-        Vector3 forward = Vector3Normalize(Vector3Subtract(player->camera.target, player->camera.position));
-        Vector3 right = Vector3Normalize(Vector3CrossProduct(forward, player->camera.up));
+        // Calculate horizontal forward and right vectors directly from yaw angle
+        // This is completely independent of pitch and eliminates any drift
+        Vector3 horizontalForward = {
+            sinf(player->yaw),   // X
+            0,                   // Y (always 0 for horizontal movement)
+            cosf(player->yaw)    // Z
+        };
         
-        // Remove Y component for horizontal movement
-        forward.y = 0;
-        forward = Vector3Normalize(forward);
-        right.y = 0;
-        right = Vector3Normalize(right);
+        Vector3 horizontalRight = {
+            cosf(player->yaw),   // X (90 degrees rotated from forward)
+            0,                   // Y (always 0 for horizontal movement)
+            -sinf(player->yaw)   // Z (90 degrees rotated from forward)
+        };
         
-        // Calculate movement input
-        if (IsKeyDown(KEY_W)) movement = Vector3Add(movement, forward);
-        if (IsKeyDown(KEY_S)) movement = Vector3Subtract(movement, forward);
-        if (IsKeyDown(KEY_A)) movement = Vector3Subtract(movement, right);
-        if (IsKeyDown(KEY_D)) movement = Vector3Add(movement, right);
+        // Calculate movement input using purely horizontal vectors
+        if (IsKeyDown(KEY_W)) movement = Vector3Add(movement, horizontalForward);
+        if (IsKeyDown(KEY_S)) movement = Vector3Subtract(movement, horizontalForward);
+        if (IsKeyDown(KEY_A)) movement = Vector3Subtract(movement, horizontalRight);
+        if (IsKeyDown(KEY_D)) movement = Vector3Add(movement, horizontalRight);
         
         // Normalize diagonal movement
         if (Vector3Length(movement) > 0) {
@@ -130,32 +138,26 @@ void HandlePlayerMouseLook(Player* player) {
     if (IsCursorHidden()) {
         Vector2 mouseDelta = GetMouseDelta();
         
-        // Update camera target based on mouse movement
-        Vector3 forward = Vector3Subtract(player->camera.target, player->camera.position);
+        // Update yaw (horizontal rotation)
+        player->yaw -= mouseDelta.x * player->mouseSensitivity;
         
-        // Horizontal rotation (yaw)
-        forward = Vector3RotateByAxisAngle(forward, (Vector3){0, 1, 0}, -mouseDelta.x * player->mouseSensitivity);
+        // Update pitch (vertical rotation) with limits
+        player->pitch -= mouseDelta.y * player->mouseSensitivity;
         
-        // Vertical rotation (pitch)
-        Vector3 right = Vector3CrossProduct(forward, player->camera.up);
-        forward = Vector3RotateByAxisAngle(forward, right, -mouseDelta.y * player->mouseSensitivity);
+        // Limit pitch to prevent over-rotation
+        const float maxPitch = PI/2 - 0.1f;  // Just under 90 degrees
+        if (player->pitch > maxPitch) player->pitch = maxPitch;
+        if (player->pitch < -maxPitch) player->pitch = -maxPitch;
         
-        // Limit vertical look angle
-        float pitch = asinf(forward.y);
-        if (pitch > PI/2 - 0.1f) {
-            forward.y = sinf(PI/2 - 0.1f);
-            float len = sqrtf(forward.x*forward.x + forward.z*forward.z);
-            forward.x = forward.x / len * cosf(PI/2 - 0.1f);
-            forward.z = forward.z / len * cosf(PI/2 - 0.1f);
-        }
-        if (pitch < -PI/2 + 0.1f) {
-            forward.y = sinf(-PI/2 + 0.1f);
-            float len = sqrtf(forward.x*forward.x + forward.z*forward.z);
-            forward.x = forward.x / len * cosf(-PI/2 + 0.1f);
-            forward.z = forward.z / len * cosf(-PI/2 + 0.1f);
-        }
+        // Calculate forward vector from yaw and pitch
+        Vector3 forward = {
+            cosf(player->pitch) * sinf(player->yaw),  // X
+            sinf(player->pitch),                      // Y  
+            cosf(player->pitch) * cosf(player->yaw)   // Z
+        };
         
-        player->camera.target = Vector3Add(player->camera.position, Vector3Normalize(forward));
+        // Update camera target
+        player->camera.target = Vector3Add(player->camera.position, forward);
     }
 }
 

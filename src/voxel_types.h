@@ -71,6 +71,10 @@ typedef struct {
     bool onGround;
     bool inWater;
     
+    // Camera rotation (independent of camera target)
+    float yaw;    // Horizontal rotation in radians
+    float pitch;  // Vertical rotation in radians
+    
     // Movement settings
     float walkSpeed;
     float runSpeed;
