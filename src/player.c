@@ -79,14 +79,7 @@ void HandlePlayerInput(Player* player) {
         }
     }
     
-    // Toggle cursor lock
-    if (IsKeyPressed(KEY_ESCAPE)) {
-        if (IsCursorHidden()) {
-            EnableCursor();
-        } else {
-            DisableCursor();
-        }
-    }
+    // Note: ESC key handling moved to screen_gameplay.c for pause menu
 }
 
 void HandlePlayerMovement(Player* player) {
