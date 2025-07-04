@@ -38,6 +38,7 @@ static bool onTransition = false;
 static bool transFadeOut = false;
 static int transFromScreen = -1;
 static GameScreen transToScreen = UNKNOWN;
+static bool shouldExitGame = false;
 
 //----------------------------------------------------------------------------------
 // Local Functions Declaration
@@ -83,7 +84,7 @@ int main(void)
     //--------------------------------------------------------------------------------------
 
     // Main game loop
-    while (!WindowShouldClose())    // Detect window close button only (ESC disabled)
+    while (!WindowShouldClose() && !shouldExitGame)    // Detect window close button only (ESC disabled) or ending screen exit
     {
         UpdateDrawFrame();
     }
@@ -264,6 +265,10 @@ static void UpdateDrawFrame(void)
                 UpdateEndingScreen();
 
                 if (FinishEndingScreen() == 1) TransitionToScreen(TITLE);
+                else if (FinishEndingScreen() == 2) {
+                    // Signal to exit the game after ending animation
+                    shouldExitGame = true;
+                }
 
             } break;
             default: break;
