@@ -73,6 +73,9 @@ int main(void)
     currentScreen = LOGO;
     InitLogoScreen();
 
+    // Disable ESC key for closing window (we handle it in pause menu)
+    SetExitKey(KEY_NULL);
+
 #if defined(PLATFORM_WEB)
     emscripten_set_main_loop(UpdateDrawFrame, 60, 1);
 #else
@@ -80,7 +83,7 @@ int main(void)
     //--------------------------------------------------------------------------------------
 
     // Main game loop
-    while (!WindowShouldClose())    // Detect window close button or ESC key
+    while (!WindowShouldClose())    // Detect window close button only (ESC disabled)
     {
         UpdateDrawFrame();
     }
