@@ -95,9 +95,9 @@ void HandlePlayerMovement(Player* player) {
         };
         
         Vector3 horizontalRight = {
-            cosf(player->yaw),   // X (90 degrees rotated from forward)
+            -cosf(player->yaw),  // X (90 degrees rotated from forward)
             0,                   // Y (always 0 for horizontal movement)
-            -sinf(player->yaw)   // Z (90 degrees rotated from forward)
+            sinf(player->yaw)    // Z (90 degrees rotated from forward)
         };
         
         // Calculate movement input using purely horizontal vectors
