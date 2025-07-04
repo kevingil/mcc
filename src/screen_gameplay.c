@@ -29,10 +29,20 @@
 static int framesCounter = 0;
 static int finishScreen = 0;
 
+// Pause menu state
+static bool gamePaused = false;
+static int pauseMenuSelection = 0;
+static int pauseMenuItemCount = 2;
+
 // Voxel game systems
 static VoxelWorld world;
 static Player player;
 static bool gameInitialized = false;
+
+//----------------------------------------------------------------------------------
+// Local Functions Declaration
+//----------------------------------------------------------------------------------
+static void DrawPauseMenu(void);
 
 //----------------------------------------------------------------------------------
 // Gameplay Screen Functions Definition
@@ -43,6 +53,10 @@ void InitGameplayScreen(void)
 {
     framesCounter = 0;
     finishScreen = 0;
+    
+    // Reset pause state
+    gamePaused = false;
+    pauseMenuSelection = 0;
     
     if (!gameInitialized) {
         // Initialize voxel world
@@ -68,17 +82,66 @@ void UpdateGameplayScreen(void)
 {
     framesCounter++;
     
-    // Update world (chunk loading/unloading)
-    UpdateVoxelWorld(&world, player.position);
-    
-    // Update player (handles input, physics, interaction)
-    UpdatePlayer(&player, &world);
-    
-    // Exit to menu
-    if (IsKeyPressed(KEY_ENTER) && IsCursorOnScreen())
+    // Handle ESC key for pause menu
+    if (IsKeyPressed(KEY_ESCAPE))
     {
-        finishScreen = 1;
+        gamePaused = !gamePaused;
+        pauseMenuSelection = 0; // Reset selection when opening menu
+        
+        if (gamePaused) {
+            EnableCursor(); // Show cursor in pause menu
+        } else {
+            DisableCursor(); // Hide cursor when resuming game
+        }
         PlaySound(fxCoin);
+    }
+    
+    if (gamePaused)
+    {
+        // Handle pause menu input
+        if (IsKeyPressed(KEY_UP) && pauseMenuSelection > 0)
+        {
+            pauseMenuSelection--;
+            PlaySound(fxCoin);
+        }
+        
+        if (IsKeyPressed(KEY_DOWN) && pauseMenuSelection < pauseMenuItemCount - 1)
+        {
+            pauseMenuSelection++;
+            PlaySound(fxCoin);
+        }
+        
+        if (IsKeyPressed(KEY_ENTER))
+        {
+            switch (pauseMenuSelection)
+            {
+                case 0: // Resume Game
+                    gamePaused = false;
+                    DisableCursor();
+                    PlaySound(fxCoin);
+                    break;
+                case 1: // Exit to Menu
+                    finishScreen = 1;
+                    PlaySound(fxCoin);
+                    break;
+            }
+        }
+    }
+    else
+    {
+        // Normal gameplay updates when not paused
+        // Update world (chunk loading/unloading)
+        UpdateVoxelWorld(&world, player.position);
+        
+        // Update player (handles input, physics, interaction)
+        UpdatePlayer(&player, &world);
+        
+        // Exit to menu (alternative method - keeping ENTER as backup)
+        if (IsKeyPressed(KEY_ENTER) && IsCursorOnScreen())
+        {
+            finishScreen = 1;
+            PlaySound(fxCoin);
+        }
     }
 }
 
@@ -95,44 +158,48 @@ void DrawGameplayScreen(void)
         RenderVoxelWorld(&world, player.camera);
         
         // Draw block outline for targeted block
-        if (player.hasTarget) {
+        if (player.hasTarget && !gamePaused) {
             DrawBlockOutline(player.targetBlock);
         }
     }
     EndMode3D();
     
     // 2D UI rendering
-    DrawPlayerUI(&player);
+    if (!gamePaused) {
+        DrawPlayerUI(&player);
+    }
     
-    // Debug information
-    DrawFPS(10, 10);
+    // Debug information (only when not paused)
+    if (!gamePaused) {
+        DrawFPS(10, 10);
+        
+        // Position info
+        DrawText(TextFormat("Position: (%.1f, %.1f, %.1f)", 
+                 player.position.x, player.position.y, player.position.z), 
+                 10, 30, 20, WHITE);
+        
+        // Chunk info
+        ChunkPos playerChunk = WorldToChunk(player.position);
+        DrawText(TextFormat("Chunk: (%d, %d) | Loaded Chunks: %d", 
+                 playerChunk.x, playerChunk.z, world.chunkCount), 
+                 10, 50, 20, WHITE);
+        
+        // Debug: Check if current chunk is loaded
+        Chunk* currentChunk = GetChunk(&world, playerChunk);
+        Color chunkStatusColor = currentChunk ? GREEN : RED;
+        DrawText(TextFormat("Current Chunk: %s", currentChunk ? "LOADED" : "NOT LOADED"), 
+                 10, 70, 20, chunkStatusColor);
+        
+        // Debug: Check ground block
+        BlockPos groundPos = {(int)player.position.x, (int)(player.position.y - 1), (int)player.position.z};
+        BlockType groundBlock = GetBlock(&world, groundPos);
+        DrawText(TextFormat("Ground Block: %d (%s)", groundBlock, 
+                 groundBlock == BLOCK_AIR ? "AIR" : "SOLID"), 
+                 10, 90, 20, groundBlock == BLOCK_AIR ? RED : GREEN);
+    }
     
-    // Position info
-    DrawText(TextFormat("Position: (%.1f, %.1f, %.1f)", 
-             player.position.x, player.position.y, player.position.z), 
-             10, 30, 20, WHITE);
-    
-    // Chunk info
-    ChunkPos playerChunk = WorldToChunk(player.position);
-    DrawText(TextFormat("Chunk: (%d, %d) | Loaded Chunks: %d", 
-             playerChunk.x, playerChunk.z, world.chunkCount), 
-             10, 50, 20, WHITE);
-    
-    // Debug: Check if current chunk is loaded
-    Chunk* currentChunk = GetChunk(&world, playerChunk);
-    Color chunkStatusColor = currentChunk ? GREEN : RED;
-    DrawText(TextFormat("Current Chunk: %s", currentChunk ? "LOADED" : "NOT LOADED"), 
-             10, 70, 20, chunkStatusColor);
-    
-    // Debug: Check ground block
-    BlockPos groundPos = {(int)player.position.x, (int)(player.position.y - 1), (int)player.position.z};
-    BlockType groundBlock = GetBlock(&world, groundPos);
-    DrawText(TextFormat("Ground Block: %d (%s)", groundBlock, 
-             groundBlock == BLOCK_AIR ? "AIR" : "SOLID"), 
-             10, 90, 20, groundBlock == BLOCK_AIR ? RED : GREEN);
-    
-    // Controls help (when cursor is visible)
-    if (!IsCursorHidden()) {
+    // Controls help (when cursor is visible and game not paused)
+    if (!IsCursorHidden() && !gamePaused) {
         int screenWidth = GetScreenWidth();
         int screenHeight = GetScreenHeight();
         
@@ -145,11 +212,85 @@ void DrawGameplayScreen(void)
         DrawText("LEFT CLICK - Break block", 50, 260, 18, WHITE);
         DrawText("RIGHT CLICK - Place block", 50, 280, 18, WHITE);
         DrawText("1-9 - Select block type", 50, 300, 18, WHITE);
-        DrawText("ESC - Toggle cursor lock", 50, 320, 18, WHITE);
+        DrawText("ESC - Open pause menu", 50, 320, 18, WHITE);
         DrawText("ENTER - Return to menu", 50, 340, 18, WHITE);
         
         DrawText("Click to start playing!", screenWidth/2 - 120, screenHeight - 50, 20, YELLOW);
     }
+    
+    // Draw pause menu
+    if (gamePaused) {
+        DrawPauseMenu();
+    }
+}
+
+// Draw pause menu
+void DrawPauseMenu(void)
+{
+    int screenWidth = GetScreenWidth();
+    int screenHeight = GetScreenHeight();
+    
+    // Draw semi-transparent overlay
+    DrawRectangle(0, 0, screenWidth, screenHeight, Fade(BLACK, 0.5f));
+    
+    // Menu background
+    int menuWidth = 400;
+    int menuHeight = 500;
+    int menuX = screenWidth/2 - menuWidth/2;
+    int menuY = screenHeight/2 - menuHeight/2;
+    
+    DrawRectangle(menuX, menuY, menuWidth, menuHeight, (Color){40, 40, 40, 240});
+    DrawRectangleLines(menuX, menuY, menuWidth, menuHeight, WHITE);
+    
+    // Title
+    DrawText("GAME PAUSED", menuX + menuWidth/2 - 90, menuY + 30, 30, WHITE);
+    
+    // Menu options
+    const char* menuItems[] = {
+        "Resume Game",
+        "Exit to Menu"
+    };
+    
+    int itemStartY = menuY + 100;
+    int itemSpacing = 40;
+    
+    for (int i = 0; i < pauseMenuItemCount; i++) {
+        Color textColor = (i == pauseMenuSelection) ? YELLOW : WHITE;
+        int textWidth = MeasureText(menuItems[i], 24);
+        int textX = menuX + menuWidth/2 - textWidth/2;
+        int textY = itemStartY + i * itemSpacing;
+        
+        // Highlight selected item
+        if (i == pauseMenuSelection) {
+            DrawRectangle(textX - 10, textY - 5, textWidth + 20, 30, Fade(YELLOW, 0.3f));
+        }
+        
+        DrawText(menuItems[i], textX, textY, 24, textColor);
+    }
+    
+    // Settings preview section
+    DrawText("SETTINGS (Preview)", menuX + 20, menuY + 220, 20, GRAY);
+    DrawText("Coming Soon:", menuX + 20, menuY + 250, 16, WHITE);
+    
+    const char* settingsPreview[] = {
+        "• Fullscreen Mode",
+        "• Render Distance",
+        "• Field of View",
+        "• Mouse Sensitivity",
+        "• Volume Settings",
+        "• Graphics Quality",
+        "• Vsync",
+        "• Chunk Loading Distance",
+        "• Show Debug Info"
+    };
+    
+    for (int i = 0; i < 9; i++) {
+        DrawText(settingsPreview[i], menuX + 30, menuY + 275 + i * 20, 14, LIGHTGRAY);
+    }
+    
+    // Controls
+    DrawText("Use UP/DOWN arrows and ENTER to navigate", menuX + 20, menuY + menuHeight - 40, 16, LIGHTGRAY);
+    DrawText("Press ESC to resume game", menuX + 20, menuY + menuHeight - 20, 16, LIGHTGRAY);
 }
 
 // Gameplay Screen Unload logic
