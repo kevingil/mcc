@@ -367,6 +367,10 @@ static inline bool IsBlockTransparent(BlockType block)
             block == BLOCK_GREEN_STAINED_GLASS ||
             block == BLOCK_RED_STAINED_GLASS ||
             block == BLOCK_BLACK_STAINED_GLASS ||
+            block == BLOCK_OAK_LEAVES ||
+            block == BLOCK_BIRCH_LEAVES ||
+            block == BLOCK_ACACIA_LEAVES ||
+            block == BLOCK_DARK_OAK_LEAVES ||
             block == BLOCK_ICE);
 }
 

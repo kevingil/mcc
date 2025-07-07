@@ -24,6 +24,9 @@ void UnloadTextureManager(void);
 int GetTextureIndex(const char* textureName);
 void GetBlockTextureUV(BlockType block, int faceIndex, float* u, float* v, float* w, float* h);
 
+// Block transparency and alpha blending
+bool BlockNeedsAlphaBlending(BlockType block);
+
 // Mesh generation
 void GenerateChunkMesh(Chunk* chunk, VoxelWorld* world);
 void AddFaceToMesh(Vector3 position, int faceIndex, BlockType block, 

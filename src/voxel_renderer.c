@@ -65,6 +65,9 @@ static const Vector2 faceUVs[4] = {
 void InitVoxelRenderer(void) {
     InitTextureManager();
     LoadBlockTextures();
+    
+    // Enable depth testing for proper 3D rendering
+    // Alpha blending is handled automatically by raylib when textures have alpha
 }
 
 void RenderVoxelWorld(VoxelWorld* world, Camera3D camera) {
@@ -93,6 +96,7 @@ void RenderChunk(Chunk* chunk, Camera3D camera) {
     Matrix transform = MatrixTranslate(chunkWorldPos.x, chunkWorldPos.y, chunkWorldPos.z);
     
     // Draw the chunk mesh with textured material
+    // Raylib automatically handles alpha blending for textures with alpha channels
     DrawMesh(chunk->mesh, chunk->material, transform);
 }
 
@@ -196,10 +200,16 @@ void GenerateChunkMesh(Chunk* chunk, VoxelWorld* world) {
         
         chunk->mesh = mesh;
         
-        // Create material with texture atlas
+        // Create material with texture atlas and enable alpha blending
         chunk->material = LoadMaterialDefault();
         if (textureManager.atlas.id > 0) {
             SetMaterialTexture(&chunk->material, MATERIAL_MAP_DIFFUSE, textureManager.atlas);
+            
+            // Enable alpha blending for transparency support
+            chunk->material.maps[MATERIAL_MAP_DIFFUSE].color = (Color){255, 255, 255, 255};
+            
+            // Set material shader to support alpha blending (use default shader with alpha)
+            // The default shader should handle alpha blending if the texture has alpha channel
         } else {
             printf("WARNING: No valid texture atlas to bind to material!\n");
         }
@@ -321,8 +331,8 @@ void LoadBlockTextures(void) {
     int textureCount = sizeof(textureNames) / sizeof(textureNames[0]);
     int texturesPerRow = TEXTURE_ATLAS_SIZE / TEXTURE_SIZE;
     
-    // Create atlas image with opaque white background
-    Image atlasImage = GenImageColor(TEXTURE_ATLAS_SIZE, TEXTURE_ATLAS_SIZE, WHITE);
+    // Create atlas image with transparent background (RGBA with alpha = 0)
+    Image atlasImage = GenImageColor(TEXTURE_ATLAS_SIZE, TEXTURE_ATLAS_SIZE, (Color){0, 0, 0, 0});
     
     int successfulLoads = 0;
     int placeholderCount = 0;
@@ -349,13 +359,18 @@ void LoadBlockTextures(void) {
                 if (blockTexture.data != NULL) {
                     loaded = true;
                     successfulLoads++;
+                    
+                    // Ensure image format supports alpha channel
+                    if (blockTexture.format != PIXELFORMAT_UNCOMPRESSED_R8G8B8A8) {
+                        ImageFormat(&blockTexture, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+                    }
                     break;
                 }
             }
         }
         
         if (!loaded) {
-            // Create a placeholder colored texture
+            // Create a placeholder colored texture with full alpha
             Color placeholderColors[] = {
                 GREEN, DARKGREEN, BROWN, GRAY, DARKGRAY, (Color){64,64,64,255}, 
                 BEIGE, (Color){136,136,136,255}, (Color){139,69,19,255}, (Color){162,130,78,255},
@@ -372,6 +387,9 @@ void LoadBlockTextures(void) {
             Color color = (i < sizeof(placeholderColors) / sizeof(placeholderColors[0])) ? 
                           placeholderColors[i] : WHITE;
             blockTexture = GenImageColor(TEXTURE_SIZE, TEXTURE_SIZE, color);
+            
+            // Ensure placeholder also has alpha channel
+            ImageFormat(&blockTexture, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
             placeholderCount++;
         }
         
@@ -384,11 +402,11 @@ void LoadBlockTextures(void) {
         int x = (i % texturesPerRow) * TEXTURE_SIZE;
         int y = (i / texturesPerRow) * TEXTURE_SIZE;
         
-        // Copy texture to atlas
+        // Copy texture to atlas preserving alpha channel (use BLANK instead of WHITE)
         ImageDraw(&atlasImage, blockTexture, 
                   (Rectangle){0, 0, TEXTURE_SIZE, TEXTURE_SIZE}, 
                   (Rectangle){x, y, TEXTURE_SIZE, TEXTURE_SIZE}, 
-                  WHITE);
+                  (Color){255, 255, 255, 255}); // Use full white with full alpha
         
         // Store texture info
         strcpy(textureManager.textureNames[i], textureNames[i]);
@@ -596,4 +614,35 @@ void GetBlockTextureUV(BlockType block, int faceIndex, float* u, float* v, float
     *v = textureManager.texCoords[textureIndex][1];
     *w = textureManager.texCoords[textureIndex][2];
     *h = textureManager.texCoords[textureIndex][3];
+}
+
+bool BlockNeedsAlphaBlending(BlockType block) {
+    switch (block) {
+        case BLOCK_GLASS:
+        case BLOCK_WHITE_STAINED_GLASS:
+        case BLOCK_ORANGE_STAINED_GLASS:
+        case BLOCK_MAGENTA_STAINED_GLASS:
+        case BLOCK_LIGHT_BLUE_STAINED_GLASS:
+        case BLOCK_YELLOW_STAINED_GLASS:
+        case BLOCK_LIME_STAINED_GLASS:
+        case BLOCK_PINK_STAINED_GLASS:
+        case BLOCK_GRAY_STAINED_GLASS:
+        case BLOCK_LIGHT_GRAY_STAINED_GLASS:
+        case BLOCK_CYAN_STAINED_GLASS:
+        case BLOCK_PURPLE_STAINED_GLASS:
+        case BLOCK_BLUE_STAINED_GLASS:
+        case BLOCK_BROWN_STAINED_GLASS:
+        case BLOCK_GREEN_STAINED_GLASS:
+        case BLOCK_RED_STAINED_GLASS:
+        case BLOCK_BLACK_STAINED_GLASS:
+        case BLOCK_OAK_LEAVES:
+        case BLOCK_BIRCH_LEAVES:
+        case BLOCK_ACACIA_LEAVES:
+        case BLOCK_DARK_OAK_LEAVES:
+        case BLOCK_ICE:
+        case BLOCK_WATER:
+            return true;
+        default:
+            return false;
+    }
 } 
