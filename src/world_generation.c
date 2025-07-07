@@ -80,32 +80,32 @@ bool ShouldPlaceTree(int x, int z) {
     return (treeNoise > 0.7f && (hash2D(x, z) % 100) < (TREE_FREQUENCY * 100));
 }
 
-void PlaceTree(Chunk* chunk, int localX, int baseY, int localZ) {
-    if (localX < 0 || localX >= CHUNK_SIZE || localZ < 0 || localZ >= CHUNK_SIZE) return;
-    if (baseY < 0 || baseY >= WORLD_HEIGHT - 6) return;
+void PlaceTree(Chunk* chunk, int x, int y, int z) {
+    int treeHeight = 4 + (rand() % 3); // Random height between 4-6
     
-    // Tree trunk (4-6 blocks high)
-    int trunkHeight = 4 + (hash2D(localX, localZ) % 3);
-    for (int y = 0; y < trunkHeight && (baseY + y) < WORLD_HEIGHT; y++) {
-        chunk->blocks[localX][baseY + y][localZ] = BLOCK_WOOD;
+    // Place trunk
+    for (int i = 0; i < treeHeight; i++) {
+        if (y + i < WORLD_HEIGHT) {
+            chunk->blocks[x][y + i][z] = BLOCK_OAK_LOG;
+        }
     }
     
-    // Tree leaves (simple sphere)
-    int leafY = baseY + trunkHeight;
-    for (int dx = -2; dx <= 2; dx++) {
-        for (int dy = -1; dy <= 2; dy++) {
-            for (int dz = -2; dz <= 2; dz++) {
-                int x = localX + dx;
-                int y = leafY + dy;
-                int z = localZ + dz;
+    // Place leaves (3x3x3 cube at top)
+    for (int dx = -1; dx <= 1; dx++) {
+        for (int dz = -1; dz <= 1; dz++) {
+            for (int dy = 0; dy <= 2; dy++) {
+                int leafX = x + dx;
+                int leafY = y + treeHeight - 1 + dy;
+                int leafZ = z + dz;
                 
-                if (x >= 0 && x < CHUNK_SIZE && z >= 0 && z < CHUNK_SIZE && 
-                    y >= 0 && y < WORLD_HEIGHT) {
+                // Check bounds
+                if (leafX >= 0 && leafX < CHUNK_SIZE && 
+                    leafZ >= 0 && leafZ < CHUNK_SIZE &&
+                    leafY >= 0 && leafY < WORLD_HEIGHT) {
                     
-                    // Only place leaves in a roughly spherical shape
-                    float dist = sqrtf(dx*dx + dy*dy + dz*dz);
-                    if (dist < 2.5f && chunk->blocks[x][y][z] == BLOCK_AIR) {
-                        chunk->blocks[x][y][z] = BLOCK_LEAVES;
+                    // Don't replace trunk blocks
+                    if (chunk->blocks[leafX][leafY][leafZ] != BLOCK_OAK_LOG) {
+                        chunk->blocks[leafX][leafY][leafZ] = BLOCK_OAK_LEAVES;
                     }
                 }
             }
