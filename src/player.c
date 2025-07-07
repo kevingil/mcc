@@ -44,16 +44,35 @@ void InitPlayer(Player* player, Vector3 startPosition) {
     player->selectedBlock = BLOCK_GRASS;
     player->hotbarSlot = 0;
     
-    // Initialize hotbar
+    // Initialize hotbar with basic blocks
     player->hotbar[0] = BLOCK_GRASS;
     player->hotbar[1] = BLOCK_DIRT;
     player->hotbar[2] = BLOCK_STONE;
-    player->hotbar[3] = BLOCK_WOOD;
-    player->hotbar[4] = BLOCK_LEAVES;
+    player->hotbar[3] = BLOCK_OAK_LOG;
+    player->hotbar[4] = BLOCK_OAK_LEAVES;
     player->hotbar[5] = BLOCK_WATER;
-    player->hotbar[6] = BLOCK_AIR;
-    player->hotbar[7] = BLOCK_AIR;
-    player->hotbar[8] = BLOCK_AIR;
+    player->hotbar[6] = BLOCK_COBBLESTONE;
+    player->hotbar[7] = BLOCK_SAND;
+    player->hotbar[8] = BLOCK_BRICKS;
+    
+    // Initialize inventory system
+    player->inventoryOpen = false;
+    player->inventorySelectedSlot = 0;
+    player->inventoryScrollOffset = 0;
+    
+    // Fill inventory with all available blocks
+    int slotIndex = 0;
+    for (int i = 1; i < BLOCK_COUNT && slotIndex < INVENTORY_SIZE; i++) {
+        player->inventory.blocks[slotIndex] = (BlockType)i;
+        player->inventory.quantities[slotIndex] = 64; // Full stack
+        slotIndex++;
+    }
+    
+    // Fill remaining slots with air
+    for (int i = slotIndex; i < INVENTORY_SIZE; i++) {
+        player->inventory.blocks[i] = BLOCK_AIR;
+        player->inventory.quantities[i] = 0;
+    }
     
     DisableCursor(); // Lock cursor for first-person view
 }
@@ -71,11 +90,73 @@ void HandlePlayerInput(Player* player) {
     HandlePlayerMouseLook(player);
     HandlePlayerMovement(player);
     
-    // Hotbar selection
-    for (int i = 0; i < 9; i++) {
-        if (IsKeyPressed(KEY_ONE + i)) {
-            player->hotbarSlot = i;
-            player->selectedBlock = player->hotbar[i];
+    // Inventory toggle with E key
+    if (IsKeyPressed(KEY_E)) {
+        player->inventoryOpen = !player->inventoryOpen;
+        if (player->inventoryOpen) {
+            EnableCursor(); // Show cursor in inventory
+        } else {
+            DisableCursor(); // Hide cursor when closing inventory
+        }
+    }
+    
+    // Inventory navigation (only when inventory is open)
+    if (player->inventoryOpen) {
+        // Arrow key navigation
+        if (IsKeyPressed(KEY_LEFT)) {
+            player->inventorySelectedSlot = (player->inventorySelectedSlot - 1 + INVENTORY_SIZE) % INVENTORY_SIZE;
+        }
+        if (IsKeyPressed(KEY_RIGHT)) {
+            player->inventorySelectedSlot = (player->inventorySelectedSlot + 1) % INVENTORY_SIZE;
+        }
+        if (IsKeyPressed(KEY_UP)) {
+            player->inventorySelectedSlot = (player->inventorySelectedSlot - INVENTORY_COLS + INVENTORY_SIZE) % INVENTORY_SIZE;
+        }
+        if (IsKeyPressed(KEY_DOWN)) {
+            player->inventorySelectedSlot = (player->inventorySelectedSlot + INVENTORY_COLS) % INVENTORY_SIZE;
+        }
+        
+        // Select block from inventory with Enter
+        if (IsKeyPressed(KEY_ENTER) && player->inventory.blocks[player->inventorySelectedSlot] != BLOCK_AIR) {
+            player->selectedBlock = player->inventory.blocks[player->inventorySelectedSlot];
+            // Add to hotbar if there's space
+            for (int i = 0; i < HOTBAR_SIZE; i++) {
+                if (player->hotbar[i] == BLOCK_AIR) {
+                    player->hotbar[i] = player->selectedBlock;
+                    player->hotbarSlot = i;
+                    break;
+                }
+            }
+        }
+        
+        // Mouse click selection in inventory
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+            Vector2 mousePos = GetMousePosition();
+            int mouseSlot = GetInventorySlotAtMouse(mousePos);
+            if (mouseSlot >= 0 && mouseSlot < INVENTORY_SIZE) {
+                player->inventorySelectedSlot = mouseSlot;
+                if (player->inventory.blocks[mouseSlot] != BLOCK_AIR) {
+                    player->selectedBlock = player->inventory.blocks[mouseSlot];
+                    // Add to hotbar if there's space
+                    for (int i = 0; i < HOTBAR_SIZE; i++) {
+                        if (player->hotbar[i] == BLOCK_AIR) {
+                            player->hotbar[i] = player->selectedBlock;
+                            player->hotbarSlot = i;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Hotbar selection (only when inventory is closed)
+    if (!player->inventoryOpen) {
+        for (int i = 0; i < 9; i++) {
+            if (IsKeyPressed(KEY_ONE + i)) {
+                player->hotbarSlot = i;
+                player->selectedBlock = player->hotbar[i];
+            }
         }
     }
     
@@ -348,6 +429,11 @@ void DrawPlayerUI(Player* player) {
     if (player->hasTarget) {
         DrawBlockOutline(player->targetBlock);
     }
+    
+    // Draw inventory if open
+    if (player->inventoryOpen) {
+        DrawInventory(player);
+    }
 }
 
 void DrawCrosshair(void) {
@@ -393,4 +479,239 @@ void DrawBlockOutline(BlockPos position) {
     Vector3 blockPos = {position.x, position.y, position.z};
     Vector3 size = {1.0f, 1.0f, 1.0f};
     DrawCubeWires(Vector3Add(blockPos, Vector3Scale(size, 0.5f)), size.x, size.y, size.z, RED);
+}
+
+//----------------------------------------------------------------------------------
+// Inventory UI Functions
+//----------------------------------------------------------------------------------
+void DrawInventory(Player* player) {
+    int screenWidth = GetScreenWidth();
+    int screenHeight = GetScreenHeight();
+    
+    // Inventory background
+    int inventoryWidth = 600;
+    int inventoryHeight = 400;
+    int inventoryX = (screenWidth - inventoryWidth) / 2;
+    int inventoryY = (screenHeight - inventoryHeight) / 2;
+    
+    // Draw semi-transparent background
+    DrawRectangle(0, 0, screenWidth, screenHeight, Fade(BLACK, 0.5f));
+    
+    // Draw inventory window
+    DrawRectangle(inventoryX, inventoryY, inventoryWidth, inventoryHeight, (Color){50, 50, 50, 240});
+    DrawRectangleLines(inventoryX, inventoryY, inventoryWidth, inventoryHeight, WHITE);
+    
+    // Title
+    DrawText("INVENTORY", inventoryX + 20, inventoryY + 15, 24, WHITE);
+    DrawText("Use arrow keys to navigate, ENTER to select, E to close", inventoryX + 20, inventoryY + 45, 16, LIGHTGRAY);
+    
+    // Calculate slot dimensions
+    int slotSize = 50;
+    int slotSpacing = 5;
+    int startX = inventoryX + 50;
+    int startY = inventoryY + 80;
+    
+    // Draw inventory grid
+    for (int row = 0; row < INVENTORY_ROWS; row++) {
+        for (int col = 0; col < INVENTORY_COLS; col++) {
+            int slotIndex = row * INVENTORY_COLS + col;
+            int x = startX + col * (slotSize + slotSpacing);
+            int y = startY + row * (slotSize + slotSpacing);
+            
+            // Slot background
+            Color slotColor = (slotIndex == player->inventorySelectedSlot) ? YELLOW : GRAY;
+            DrawRectangle(x, y, slotSize, slotSize, slotColor);
+            DrawRectangleLines(x, y, slotSize, slotSize, WHITE);
+            
+            // Draw block if not air
+            if (player->inventory.blocks[slotIndex] != BLOCK_AIR) {
+                Color blockColor = GetBlockColor(player->inventory.blocks[slotIndex]);
+                DrawRectangle(x + 5, y + 5, slotSize - 10, slotSize - 10, blockColor);
+                
+                // Draw quantity if more than 1
+                if (player->inventory.quantities[slotIndex] > 1) {
+                    DrawText(TextFormat("%d", player->inventory.quantities[slotIndex]), 
+                             x + slotSize - 15, y + slotSize - 15, 12, WHITE);
+                }
+            }
+        }
+    }
+    
+    // Draw selected block info
+    if (player->inventory.blocks[player->inventorySelectedSlot] != BLOCK_AIR) {
+        const char* blockName = GetBlockName(player->inventory.blocks[player->inventorySelectedSlot]);
+        DrawText(TextFormat("Selected: %s", blockName), 
+                 inventoryX + 20, inventoryY + inventoryHeight - 80, 18, WHITE);
+        DrawText(TextFormat("Quantity: %d", player->inventory.quantities[player->inventorySelectedSlot]), 
+                 inventoryX + 20, inventoryY + inventoryHeight - 60, 16, LIGHTGRAY);
+    }
+    
+    // Instructions
+    DrawText("Click on a block to select it", inventoryX + 20, inventoryY + inventoryHeight - 40, 14, LIGHTGRAY);
+    DrawText("Selected blocks will be added to your hotbar", inventoryX + 20, inventoryY + inventoryHeight - 25, 14, LIGHTGRAY);
+}
+
+int GetInventorySlotAtMouse(Vector2 mousePos) {
+    int screenWidth = GetScreenWidth();
+    int screenHeight = GetScreenHeight();
+    
+    int inventoryWidth = 600;
+    int inventoryHeight = 400;
+    int inventoryX = (screenWidth - inventoryWidth) / 2;
+    int inventoryY = (screenHeight - inventoryHeight) / 2;
+    
+    int slotSize = 50;
+    int slotSpacing = 5;
+    int startX = inventoryX + 50;
+    int startY = inventoryY + 80;
+    
+    // Check if mouse is within inventory area
+    if (mousePos.x < startX || mousePos.x > startX + INVENTORY_COLS * (slotSize + slotSpacing) ||
+        mousePos.y < startY || mousePos.y > startY + INVENTORY_ROWS * (slotSize + slotSpacing)) {
+        return -1;
+    }
+    
+    // Calculate which slot the mouse is over
+    int col = (mousePos.x - startX) / (slotSize + slotSpacing);
+    int row = (mousePos.y - startY) / (slotSize + slotSpacing);
+    
+    if (col >= 0 && col < INVENTORY_COLS && row >= 0 && row < INVENTORY_ROWS) {
+        return row * INVENTORY_COLS + col;
+    }
+    
+    return -1;
+}
+
+const char* GetBlockName(BlockType block) {
+    switch (block) {
+        case BLOCK_AIR: return "Air";
+        case BLOCK_GRASS: return "Grass Block";
+        case BLOCK_DIRT: return "Dirt";
+        case BLOCK_STONE: return "Stone";
+        case BLOCK_COBBLESTONE: return "Cobblestone";
+        case BLOCK_BEDROCK: return "Bedrock";
+        case BLOCK_SAND: return "Sand";
+        case BLOCK_GRAVEL: return "Gravel";
+        case BLOCK_WATER: return "Water";
+        case BLOCK_OAK_LOG: return "Oak Log";
+        case BLOCK_OAK_PLANKS: return "Oak Planks";
+        case BLOCK_OAK_LEAVES: return "Oak Leaves";
+        case BLOCK_BIRCH_LOG: return "Birch Log";
+        case BLOCK_BIRCH_PLANKS: return "Birch Planks";
+        case BLOCK_BIRCH_LEAVES: return "Birch Leaves";
+        case BLOCK_ACACIA_LOG: return "Acacia Log";
+        case BLOCK_ACACIA_PLANKS: return "Acacia Planks";
+        case BLOCK_ACACIA_LEAVES: return "Acacia Leaves";
+        case BLOCK_DARK_OAK_LOG: return "Dark Oak Log";
+        case BLOCK_DARK_OAK_PLANKS: return "Dark Oak Planks";
+        case BLOCK_DARK_OAK_LEAVES: return "Dark Oak Leaves";
+        case BLOCK_STONE_BRICKS: return "Stone Bricks";
+        case BLOCK_MOSSY_STONE_BRICKS: return "Mossy Stone Bricks";
+        case BLOCK_CRACKED_STONE_BRICKS: return "Cracked Stone Bricks";
+        case BLOCK_MOSSY_COBBLESTONE: return "Mossy Cobblestone";
+        case BLOCK_SMOOTH_STONE: return "Smooth Stone";
+        case BLOCK_ANDESITE: return "Andesite";
+        case BLOCK_GRANITE: return "Granite";
+        case BLOCK_DIORITE: return "Diorite";
+        case BLOCK_SANDSTONE: return "Sandstone";
+        case BLOCK_CHISELED_SANDSTONE: return "Chiseled Sandstone";
+        case BLOCK_CUT_SANDSTONE: return "Cut Sandstone";
+        case BLOCK_RED_SAND: return "Red Sand";
+        case BLOCK_RED_SANDSTONE: return "Red Sandstone";
+        case BLOCK_COAL_ORE: return "Coal Ore";
+        case BLOCK_IRON_ORE: return "Iron Ore";
+        case BLOCK_GOLD_ORE: return "Gold Ore";
+        case BLOCK_DIAMOND_ORE: return "Diamond Ore";
+        case BLOCK_REDSTONE_ORE: return "Redstone Ore";
+        case BLOCK_EMERALD_ORE: return "Emerald Ore";
+        case BLOCK_LAPIS_ORE: return "Lapis Ore";
+        case BLOCK_IRON_BLOCK: return "Iron Block";
+        case BLOCK_GOLD_BLOCK: return "Gold Block";
+        case BLOCK_DIAMOND_BLOCK: return "Diamond Block";
+        case BLOCK_EMERALD_BLOCK: return "Emerald Block";
+        case BLOCK_REDSTONE_BLOCK: return "Redstone Block";
+        case BLOCK_LAPIS_BLOCK: return "Lapis Block";
+        case BLOCK_COAL_BLOCK: return "Coal Block";
+        case BLOCK_WHITE_WOOL: return "White Wool";
+        case BLOCK_ORANGE_WOOL: return "Orange Wool";
+        case BLOCK_MAGENTA_WOOL: return "Magenta Wool";
+        case BLOCK_LIGHT_BLUE_WOOL: return "Light Blue Wool";
+        case BLOCK_YELLOW_WOOL: return "Yellow Wool";
+        case BLOCK_LIME_WOOL: return "Lime Wool";
+        case BLOCK_PINK_WOOL: return "Pink Wool";
+        case BLOCK_GRAY_WOOL: return "Gray Wool";
+        case BLOCK_LIGHT_GRAY_WOOL: return "Light Gray Wool";
+        case BLOCK_CYAN_WOOL: return "Cyan Wool";
+        case BLOCK_PURPLE_WOOL: return "Purple Wool";
+        case BLOCK_BLUE_WOOL: return "Blue Wool";
+        case BLOCK_BROWN_WOOL: return "Brown Wool";
+        case BLOCK_GREEN_WOOL: return "Green Wool";
+        case BLOCK_RED_WOOL: return "Red Wool";
+        case BLOCK_BLACK_WOOL: return "Black Wool";
+        case BLOCK_WHITE_CONCRETE: return "White Concrete";
+        case BLOCK_ORANGE_CONCRETE: return "Orange Concrete";
+        case BLOCK_MAGENTA_CONCRETE: return "Magenta Concrete";
+        case BLOCK_LIGHT_BLUE_CONCRETE: return "Light Blue Concrete";
+        case BLOCK_YELLOW_CONCRETE: return "Yellow Concrete";
+        case BLOCK_LIME_CONCRETE: return "Lime Concrete";
+        case BLOCK_PINK_CONCRETE: return "Pink Concrete";
+        case BLOCK_GRAY_CONCRETE: return "Gray Concrete";
+        case BLOCK_LIGHT_GRAY_CONCRETE: return "Light Gray Concrete";
+        case BLOCK_CYAN_CONCRETE: return "Cyan Concrete";
+        case BLOCK_PURPLE_CONCRETE: return "Purple Concrete";
+        case BLOCK_BLUE_CONCRETE: return "Blue Concrete";
+        case BLOCK_BROWN_CONCRETE: return "Brown Concrete";
+        case BLOCK_GREEN_CONCRETE: return "Green Concrete";
+        case BLOCK_RED_CONCRETE: return "Red Concrete";
+        case BLOCK_BLACK_CONCRETE: return "Black Concrete";
+        case BLOCK_GLASS: return "Glass";
+        case BLOCK_WHITE_STAINED_GLASS: return "White Stained Glass";
+        case BLOCK_ORANGE_STAINED_GLASS: return "Orange Stained Glass";
+        case BLOCK_MAGENTA_STAINED_GLASS: return "Magenta Stained Glass";
+        case BLOCK_LIGHT_BLUE_STAINED_GLASS: return "Light Blue Stained Glass";
+        case BLOCK_YELLOW_STAINED_GLASS: return "Yellow Stained Glass";
+        case BLOCK_LIME_STAINED_GLASS: return "Lime Stained Glass";
+        case BLOCK_PINK_STAINED_GLASS: return "Pink Stained Glass";
+        case BLOCK_GRAY_STAINED_GLASS: return "Gray Stained Glass";
+        case BLOCK_LIGHT_GRAY_STAINED_GLASS: return "Light Gray Stained Glass";
+        case BLOCK_CYAN_STAINED_GLASS: return "Cyan Stained Glass";
+        case BLOCK_PURPLE_STAINED_GLASS: return "Purple Stained Glass";
+        case BLOCK_BLUE_STAINED_GLASS: return "Blue Stained Glass";
+        case BLOCK_BROWN_STAINED_GLASS: return "Brown Stained Glass";
+        case BLOCK_GREEN_STAINED_GLASS: return "Green Stained Glass";
+        case BLOCK_RED_STAINED_GLASS: return "Red Stained Glass";
+        case BLOCK_BLACK_STAINED_GLASS: return "Black Stained Glass";
+        case BLOCK_BRICKS: return "Bricks";
+        case BLOCK_BOOKSHELF: return "Bookshelf";
+        case BLOCK_CRAFTING_TABLE: return "Crafting Table";
+        case BLOCK_FURNACE: return "Furnace";
+        case BLOCK_CHEST: return "Chest";
+        case BLOCK_GLOWSTONE: return "Glowstone";
+        case BLOCK_OBSIDIAN: return "Obsidian";
+        case BLOCK_NETHERRACK: return "Netherrack";
+        case BLOCK_SOUL_SAND: return "Soul Sand";
+        case BLOCK_END_STONE: return "End Stone";
+        case BLOCK_PURPUR_BLOCK: return "Purpur Block";
+        case BLOCK_PRISMARINE: return "Prismarine";
+        case BLOCK_SEA_LANTERN: return "Sea Lantern";
+        case BLOCK_MAGMA_BLOCK: return "Magma Block";
+        case BLOCK_BONE_BLOCK: return "Bone Block";
+        case BLOCK_QUARTZ_BLOCK: return "Quartz Block";
+        case BLOCK_CHISELED_QUARTZ_BLOCK: return "Chiseled Quartz Block";
+        case BLOCK_QUARTZ_PILLAR: return "Quartz Pillar";
+        case BLOCK_PACKED_ICE: return "Packed Ice";
+        case BLOCK_BLUE_ICE: return "Blue Ice";
+        case BLOCK_ICE: return "Ice";
+        case BLOCK_SNOW_BLOCK: return "Snow Block";
+        case BLOCK_CLAY: return "Clay";
+        case BLOCK_HONEYCOMB_BLOCK: return "Honeycomb Block";
+        case BLOCK_HAY_BLOCK: return "Hay Block";
+        case BLOCK_MELON: return "Melon";
+        case BLOCK_PUMPKIN: return "Pumpkin";
+        case BLOCK_JACK_O_LANTERN: return "Jack o'Lantern";
+        case BLOCK_CACTUS: return "Cactus";
+        case BLOCK_SPONGE: return "Sponge";
+        case BLOCK_WET_SPONGE: return "Wet Sponge";
+        default: return "Unknown Block";
+    }
 } 
