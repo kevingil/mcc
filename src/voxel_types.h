@@ -20,6 +20,33 @@
 #define TREE_FREQUENCY 0.05f
 
 //----------------------------------------------------------------------------------
+// Texture Management
+//----------------------------------------------------------------------------------
+#define MAX_BLOCK_TEXTURES 512
+#define TEXTURE_ATLAS_SIZE 1024
+#define TEXTURE_SIZE 16  // Each texture is 16x16 pixels
+
+typedef struct {
+    Texture2D atlas;
+    float texCoords[MAX_BLOCK_TEXTURES][4]; // UV coordinates: x, y, width, height
+    int textureCount;
+    char textureNames[MAX_BLOCK_TEXTURES][64];
+} TextureManager;
+
+// Face types for texture mapping
+typedef enum {
+    FACE_TYPE_ALL = 0,      // Same texture for all faces
+    FACE_TYPE_TOP,          // Top face
+    FACE_TYPE_SIDE,         // Side faces
+    FACE_TYPE_BOTTOM,       // Bottom face
+    FACE_TYPE_FRONT,        // Front face (for directional blocks)
+    FACE_TYPE_BACK,         // Back face
+    FACE_TYPE_LEFT,         // Left face
+    FACE_TYPE_RIGHT,        // Right face
+    FACE_TYPE_COUNT
+} FaceTextureType;
+
+//----------------------------------------------------------------------------------
 // Block Types
 //----------------------------------------------------------------------------------
 typedef enum {
@@ -217,6 +244,7 @@ typedef struct {
     
     // Rendering data
     Mesh mesh;
+    Material material;
     bool hasMesh;
     int vertexCount;
     int triangleCount;
