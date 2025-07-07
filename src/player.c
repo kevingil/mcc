@@ -477,6 +477,9 @@ void DrawHotbar(Player* player) {
     int startX = (screenWidth - hotbarWidth) / 2;
     int startY = screenHeight - slotSize - 20;
     
+    // Get texture atlas for drawing block textures
+    Texture2D textureAtlas = GetTextureAtlas();
+    
     for (int i = 0; i < 9; i++) {
         int x = startX + i * slotSize;
         int y = startY;
@@ -486,10 +489,29 @@ void DrawHotbar(Player* player) {
         DrawRectangle(x, y, slotSize, slotSize, slotColor);
         DrawRectangleLines(x, y, slotSize, slotSize, WHITE);
         
-        // Draw block color
+        // Draw block texture or color fallback
         if (player->hotbar[i] != BLOCK_AIR) {
-            Color blockColor = GetBlockColor(player->hotbar[i]);
-            DrawRectangle(x + 5, y + 5, slotSize - 10, slotSize - 10, blockColor);
+            if (textureAtlas.id > 0) {
+                // Get texture coordinates for the block (use top face for UI)
+                float u, v, w, h;
+                GetBlockTextureUV(player->hotbar[i], FACE_TOP, &u, &v, &w, &h);
+                
+                // Convert normalized coordinates to pixel coordinates
+                Rectangle sourceRect = {
+                    u * textureAtlas.width,
+                    v * textureAtlas.height,
+                    w * textureAtlas.width,
+                    h * textureAtlas.height
+                };
+                
+                // Draw the texture scaled to fit the slot
+                Rectangle destRect = {x + 5, y + 5, slotSize - 10, slotSize - 10};
+                DrawTexturePro(textureAtlas, sourceRect, destRect, (Vector2){0, 0}, 0.0f, WHITE);
+            } else {
+                // Fallback to color if texture not available
+                Color blockColor = GetBlockColor(player->hotbar[i]);
+                DrawRectangle(x + 5, y + 5, slotSize - 10, slotSize - 10, blockColor);
+            }
         }
         
         // Draw slot number
@@ -533,6 +555,9 @@ void DrawInventory(Player* player) {
     int startX = inventoryX + 50;
     int startY = inventoryY + 80;
     
+    // Get texture atlas for drawing block textures
+    Texture2D textureAtlas = GetTextureAtlas();
+    
     // Draw inventory grid
     for (int row = 0; row < INVENTORY_ROWS; row++) {
         for (int col = 0; col < INVENTORY_COLS; col++) {
@@ -547,8 +572,27 @@ void DrawInventory(Player* player) {
             
             // Draw block if not air
             if (player->inventory.blocks[slotIndex] != BLOCK_AIR) {
-                Color blockColor = GetBlockColor(player->inventory.blocks[slotIndex]);
-                DrawRectangle(x + 5, y + 5, slotSize - 10, slotSize - 10, blockColor);
+                if (textureAtlas.id > 0) {
+                    // Get texture coordinates for the block (use top face for UI)
+                    float u, v, w, h;
+                    GetBlockTextureUV(player->inventory.blocks[slotIndex], FACE_TOP, &u, &v, &w, &h);
+                    
+                    // Convert normalized coordinates to pixel coordinates
+                    Rectangle sourceRect = {
+                        u * textureAtlas.width,
+                        v * textureAtlas.height,
+                        w * textureAtlas.width,
+                        h * textureAtlas.height
+                    };
+                    
+                    // Draw the texture scaled to fit the slot
+                    Rectangle destRect = {x + 5, y + 5, slotSize - 10, slotSize - 10};
+                    DrawTexturePro(textureAtlas, sourceRect, destRect, (Vector2){0, 0}, 0.0f, WHITE);
+                } else {
+                    // Fallback to color if texture not available
+                    Color blockColor = GetBlockColor(player->inventory.blocks[slotIndex]);
+                    DrawRectangle(x + 5, y + 5, slotSize - 10, slotSize - 10, blockColor);
+                }
                 
                 // Draw quantity if more than 1
                 if (player->inventory.quantities[slotIndex] > 1) {
