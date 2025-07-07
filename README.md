@@ -2,7 +2,7 @@
 
 ## MC.C
 
-![Voxel World](screenshots/image.jpg "Voxel World")
+![Voxel World](screenshots/image.png "Voxel World")
 
 ### Description
 
