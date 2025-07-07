@@ -34,6 +34,7 @@ void DrawPlayerUI(Player* player);
 void DrawCrosshair(void);
 void DrawHotbar(Player* player);
 void DrawBlockOutline(BlockPos position);
+void DrawBlockDebugInfo(Player* player, VoxelWorld* world);
 
 // Inventory functions
 void DrawInventory(Player* player);

@@ -1,4 +1,5 @@
 #include "player.h"
+#include "voxel_renderer.h"
 #include "raymath.h"
 #include <math.h>
 
@@ -410,6 +411,39 @@ bool RaycastToBlock(Vector3 origin, Vector3 direction, VoxelWorld* world, BlockP
 //----------------------------------------------------------------------------------
 // UI Functions
 //----------------------------------------------------------------------------------
+void DrawBlockDebugInfo(Player* player, VoxelWorld* world) {
+    if (!player->hasTarget) return;
+    
+    // Get block information
+    BlockType targetBlock = GetBlock(world, player->targetBlock);
+    if (targetBlock == BLOCK_AIR) return;
+    
+    const char* blockName = GetBlockName(targetBlock);
+    
+    // Get texture name for the top face (most representative)
+    const char* textureName = GetBlockTextureName(targetBlock, FACE_TOP);
+    
+    // Draw semi-transparent background
+    int panelWidth = 300;
+    int panelHeight = 80;
+    int screenWidth = GetScreenWidth();
+    int x = screenWidth - panelWidth - 20;
+    int y = 20;
+    
+    DrawRectangle(x, y, panelWidth, panelHeight, (Color){0, 0, 0, 150});
+    DrawRectangleLines(x, y, panelWidth, panelHeight, WHITE);
+    
+    // Draw debug text
+    DrawText("Block Debug Info", x + 10, y + 10, 18, YELLOW);
+    DrawText(TextFormat("Name: %s", blockName), x + 10, y + 30, 16, WHITE);
+    DrawText(TextFormat("Texture: %s.png", textureName), x + 10, y + 50, 16, LIGHTGRAY);
+    
+    // Draw block position
+    DrawText(TextFormat("Pos: (%d, %d, %d)", 
+             player->targetBlock.x, player->targetBlock.y, player->targetBlock.z), 
+             x + 10, y + 70, 14, GRAY);
+}
+
 void DrawPlayerUI(Player* player) {
     DrawCrosshair();
     DrawHotbar(player);
