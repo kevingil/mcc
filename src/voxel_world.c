@@ -18,6 +18,10 @@ void InitVoxelWorld(VoxelWorld* world) {
         world->chunks[i].needsRegen = false;
         world->chunks[i].isVisible = false;
         world->chunks[i].position = (ChunkPos){0, 0};
+        world->chunks[i].vertexCount = 0;
+        world->chunks[i].triangleCount = 0;
+        world->chunks[i].transparentVertexCount = 0;
+        world->chunks[i].transparentTriangleCount = 0;
         memset(world->chunks[i].blocks, BLOCK_AIR, sizeof(world->chunks[i].blocks));
     }
     
@@ -37,8 +41,18 @@ void UpdateVoxelWorld(VoxelWorld* world, Vector3 playerPosition) {
 void UnloadVoxelWorld(VoxelWorld* world) {
     for (int i = 0; i < MAX_CHUNKS; i++) {
         if (world->chunks[i].isLoaded && world->chunks[i].hasMesh) {
-            UnloadMesh(world->chunks[i].mesh);
-            UnloadMaterial(world->chunks[i].material);
+            // Unload opaque mesh and material
+            if (world->chunks[i].vertexCount > 0) {
+                UnloadMesh(world->chunks[i].mesh);
+                UnloadMaterial(world->chunks[i].material);
+            }
+            
+            // Unload transparent mesh and material
+            if (world->chunks[i].transparentVertexCount > 0) {
+                UnloadMesh(world->chunks[i].transparentMesh);
+                UnloadMaterial(world->chunks[i].transparentMaterial);
+            }
+            
             world->chunks[i].hasMesh = false;
         }
         world->chunks[i].isLoaded = false;
@@ -73,6 +87,10 @@ Chunk* LoadChunk(VoxelWorld* world, ChunkPos position) {
             chunk->needsRegen = true;
             chunk->hasMesh = false;
             chunk->isVisible = false;
+            chunk->vertexCount = 0;
+            chunk->triangleCount = 0;
+            chunk->transparentVertexCount = 0;
+            chunk->transparentTriangleCount = 0;
             
             // Generate chunk terrain
             GenerateChunk(chunk);
@@ -93,14 +111,28 @@ void UnloadChunk(VoxelWorld* world, int index) {
     
     // Unload mesh and material if they exist
     if (chunk->hasMesh) {
-        UnloadMesh(chunk->mesh);
-        UnloadMaterial(chunk->material);
+        // Unload opaque mesh and material
+        if (chunk->vertexCount > 0) {
+            UnloadMesh(chunk->mesh);
+            UnloadMaterial(chunk->material);
+        }
+        
+        // Unload transparent mesh and material
+        if (chunk->transparentVertexCount > 0) {
+            UnloadMesh(chunk->transparentMesh);
+            UnloadMaterial(chunk->transparentMaterial);
+        }
+        
         chunk->hasMesh = false;
     }
     
     chunk->isLoaded = false;
     chunk->needsRegen = false;
     chunk->isVisible = false;
+    chunk->vertexCount = 0;
+    chunk->triangleCount = 0;
+    chunk->transparentVertexCount = 0;
+    chunk->transparentTriangleCount = 0;
     world->chunkCount--;
 }
 

@@ -1,5 +1,6 @@
 #include "voxel_renderer.h"
 #include "raymath.h"
+#include "rlgl.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -35,26 +36,26 @@ static const Vector3 faceOffsets[6] = {
     { 0, -1,  0}  // FACE_BOTTOM
 };
 
-// Vertex positions for each face (relative to block corner)
+// Vertex positions for each face (relative to block corner) - Fixed winding order
 static const Vector3 faceVertices[6][4] = {
-    // FACE_FRONT (Z+)
+    // FACE_FRONT (Z+) - Counter-clockwise from front view
     {{0, 0, 1}, {1, 0, 1}, {1, 1, 1}, {0, 1, 1}},
-    // FACE_BACK (Z-)
+    // FACE_BACK (Z-) - Counter-clockwise from back view  
     {{1, 0, 0}, {0, 0, 0}, {0, 1, 0}, {1, 1, 0}},
-    // FACE_LEFT (X-)
+    // FACE_LEFT (X-) - Counter-clockwise from left view
     {{0, 0, 0}, {0, 0, 1}, {0, 1, 1}, {0, 1, 0}},
-    // FACE_RIGHT (X+)
+    // FACE_RIGHT (X+) - Counter-clockwise from right view
     {{1, 0, 1}, {1, 0, 0}, {1, 1, 0}, {1, 1, 1}},
-    // FACE_TOP (Y+)
-    {{0, 1, 0}, {0, 1, 1}, {1, 1, 1}, {1, 1, 0}},
-    // FACE_BOTTOM (Y-)
-    {{0, 0, 1}, {0, 0, 0}, {1, 0, 0}, {1, 0, 1}}
+    // FACE_TOP (Y+) - Counter-clockwise from top view
+    {{0, 1, 1}, {1, 1, 1}, {1, 1, 0}, {0, 1, 0}},
+    // FACE_BOTTOM (Y-) - Counter-clockwise from bottom view
+    {{0, 0, 0}, {1, 0, 0}, {1, 0, 1}, {0, 0, 1}}
 };
 
-// UV coordinates for each face vertex
+// UV coordinates for each face vertex - Fixed to match new winding order
 static const Vector2 faceUVs[4] = {
     {0.0f, 1.0f}, // Bottom-left
-    {1.0f, 1.0f}, // Bottom-right
+    {1.0f, 1.0f}, // Bottom-right  
     {1.0f, 0.0f}, // Top-right
     {0.0f, 0.0f}  // Top-left
 };
@@ -81,23 +82,62 @@ void RenderVoxelWorld(VoxelWorld* world, Camera3D camera) {
         }
     }
     
-    // Render visible chunks
+    // Sort chunks by distance for transparent rendering
+    SortChunksByDistance(world, camera.position);
+    
+    // First pass: Render opaque blocks (front to back for Z-buffer efficiency)
     for (int i = 0; i < MAX_CHUNKS; i++) {
         if (world->chunks[i].isLoaded && world->chunks[i].isVisible && world->chunks[i].hasMesh) {
-            RenderChunk(&world->chunks[i], camera);
+            if (world->chunks[i].vertexCount > 0) {
+                Vector3 chunkWorldPos = ChunkToWorld(world->chunks[i].position);
+                Matrix transform = MatrixTranslate(chunkWorldPos.x, chunkWorldPos.y, chunkWorldPos.z);
+                DrawMesh(world->chunks[i].mesh, world->chunks[i].material, transform);
+            }
         }
     }
+    
+    // Second pass: Render transparent blocks (back to front for proper alpha blending)
+    // Enable alpha blending and disable depth writing for transparent objects
+    rlSetBlendMode(BLEND_ALPHA);
+    rlSetBlendFactors(RL_SRC_ALPHA, RL_ONE_MINUS_SRC_ALPHA, RL_FUNC_ADD);
+    
+    for (int i = MAX_CHUNKS - 1; i >= 0; i--) {  // Reverse order for back-to-front
+        if (world->chunks[i].isLoaded && world->chunks[i].isVisible && world->chunks[i].hasMesh) {
+            if (world->chunks[i].transparentVertexCount > 0) {
+                Vector3 chunkWorldPos = ChunkToWorld(world->chunks[i].position);
+                Matrix transform = MatrixTranslate(chunkWorldPos.x, chunkWorldPos.y, chunkWorldPos.z);
+                
+                // Disable depth writing for transparent objects but keep depth testing
+                rlDisableDepthMask();
+                DrawMesh(world->chunks[i].transparentMesh, world->chunks[i].transparentMaterial, transform);
+                rlEnableDepthMask();
+            }
+        }
+    }
+    
+    // Reset blend mode to normal
+    rlSetBlendMode(BLEND_ALPHA);
 }
 
 void RenderChunk(Chunk* chunk, Camera3D camera) {
-    if (!chunk->hasMesh || chunk->vertexCount == 0) return;
+    // This function is now handled by RenderVoxelWorld for proper depth sorting
+    // Keeping for compatibility but not used in the new rendering pipeline
+    if (!chunk->hasMesh) return;
     
     Vector3 chunkWorldPos = ChunkToWorld(chunk->position);
     Matrix transform = MatrixTranslate(chunkWorldPos.x, chunkWorldPos.y, chunkWorldPos.z);
     
-    // Draw the chunk mesh with textured material
-    // Raylib automatically handles alpha blending for textures with alpha channels
-    DrawMesh(chunk->mesh, chunk->material, transform);
+    // Draw opaque mesh
+    if (chunk->vertexCount > 0) {
+        DrawMesh(chunk->mesh, chunk->material, transform);
+    }
+    
+    // Draw transparent mesh with alpha blending
+    if (chunk->transparentVertexCount > 0) {
+        rlSetBlendMode(BLEND_ALPHA);
+        DrawMesh(chunk->transparentMesh, chunk->transparentMaterial, transform);
+        rlSetBlendMode(BLEND_ALPHA);
+    }
 }
 
 void UpdateChunkMesh(Chunk* chunk, VoxelWorld* world) {
@@ -116,29 +156,28 @@ void UnloadVoxelRenderer(void) {
 // Mesh Generation Functions
 //----------------------------------------------------------------------------------
 void GenerateChunkMesh(Chunk* chunk, VoxelWorld* world) {
-    // Unload existing mesh
+    // Free existing mesh if it exists
     if (chunk->hasMesh) {
         UnloadMesh(chunk->mesh);
         UnloadMaterial(chunk->material);
         chunk->hasMesh = false;
     }
     
-    // Allocate temporary arrays for mesh data
-    float* vertices = (float*)malloc(MAX_VERTICES_PER_CHUNK * 3 * sizeof(float));
-    float* texCoords = (float*)malloc(MAX_VERTICES_PER_CHUNK * 2 * sizeof(float));
-    unsigned short* indices = (unsigned short*)malloc(MAX_TRIANGLES_PER_CHUNK * 3 * sizeof(unsigned short));
+    // Create separate arrays for opaque and transparent blocks
+    float* opaqueVertices = (float*)malloc(MAX_VERTICES_PER_CHUNK * 3 * sizeof(float));
+    float* opaqueTexCoords = (float*)malloc(MAX_VERTICES_PER_CHUNK * 2 * sizeof(float));
+    unsigned short* opaqueIndices = (unsigned short*)malloc(MAX_TRIANGLES_PER_CHUNK * 3 * sizeof(unsigned short));
     
-    if (!vertices || !texCoords || !indices) {
-        if (vertices) free(vertices);
-        if (texCoords) free(texCoords);
-        if (indices) free(indices);
-        return;
-    }
+    float* transparentVertices = (float*)malloc(MAX_VERTICES_PER_CHUNK * 3 * sizeof(float));
+    float* transparentTexCoords = (float*)malloc(MAX_VERTICES_PER_CHUNK * 2 * sizeof(float));
+    unsigned short* transparentIndices = (unsigned short*)malloc(MAX_TRIANGLES_PER_CHUNK * 3 * sizeof(unsigned short));
     
-    int vertexIndex = 0;
-    int indexIndex = 0;
+    int opaqueVertexIndex = 0;
+    int opaqueIndexIndex = 0;
+    int transparentVertexIndex = 0;
+    int transparentIndexIndex = 0;
     
-    // Generate mesh for each block in chunk
+    // Generate faces for each block
     for (int x = 0; x < CHUNK_SIZE; x++) {
         for (int y = 0; y < WORLD_HEIGHT; y++) {
             for (int z = 0; z < CHUNK_SIZE; z++) {
@@ -147,6 +186,14 @@ void GenerateChunkMesh(Chunk* chunk, VoxelWorld* world) {
                 if (block == BLOCK_AIR) continue;
                 
                 Vector3 blockPos = {x, y, z};
+                bool isTransparent = BlockNeedsAlphaBlending(block);
+                
+                // Choose the appropriate arrays based on block transparency
+                float* vertices = isTransparent ? transparentVertices : opaqueVertices;
+                float* texCoords = isTransparent ? transparentTexCoords : opaqueTexCoords;
+                unsigned short* indices = isTransparent ? transparentIndices : opaqueIndices;
+                int* vertexIndex = isTransparent ? &transparentVertexIndex : &opaqueVertexIndex;
+                int* indexIndex = isTransparent ? &transparentIndexIndex : &opaqueIndexIndex;
                 
                 // Check each face of the block
                 for (int face = 0; face < 6; face++) {
@@ -157,70 +204,97 @@ void GenerateChunkMesh(Chunk* chunk, VoxelWorld* world) {
                     };
                     
                     if (ShouldRenderFace(world, neighborPos, face)) {
-                        AddFaceToMesh(blockPos, face, block, vertices, texCoords, &vertexIndex);
+                        AddFaceToMesh(blockPos, face, block, vertices, texCoords, vertexIndex);
                         
-                        // Add indices for two triangles
-                        unsigned short baseIndex = (vertexIndex - 4);
+                        // Add indices for two triangles (fixed winding order)
+                        unsigned short baseIndex = (*vertexIndex - 4);
                         
-                        // First triangle
-                        indices[indexIndex++] = baseIndex;
-                        indices[indexIndex++] = baseIndex + 1;
-                        indices[indexIndex++] = baseIndex + 2;
+                        // First triangle (counter-clockwise)
+                        indices[(*indexIndex)++] = baseIndex;
+                        indices[(*indexIndex)++] = baseIndex + 1;
+                        indices[(*indexIndex)++] = baseIndex + 2;
                         
-                        // Second triangle
-                        indices[indexIndex++] = baseIndex;
-                        indices[indexIndex++] = baseIndex + 2;
-                        indices[indexIndex++] = baseIndex + 3;
+                        // Second triangle (counter-clockwise)
+                        indices[(*indexIndex)++] = baseIndex;
+                        indices[(*indexIndex)++] = baseIndex + 2;
+                        indices[(*indexIndex)++] = baseIndex + 3;
                     }
                 }
             }
         }
     }
     
-    chunk->vertexCount = vertexIndex;
-    chunk->triangleCount = indexIndex / 3;
-    
-    // Create mesh if we have vertices
-    if (vertexIndex > 0) {
-        Mesh mesh = { 0 };
-        mesh.vertexCount = vertexIndex;
-        mesh.triangleCount = chunk->triangleCount;
+    // Create opaque mesh
+    if (opaqueVertexIndex > 0) {
+        Mesh opaqueMesh = { 0 };
+        opaqueMesh.vertexCount = opaqueVertexIndex;
+        opaqueMesh.triangleCount = opaqueIndexIndex / 3;
         
         // Allocate and copy vertex data
-        mesh.vertices = (float*)RL_MALLOC(vertexIndex * 3 * sizeof(float));
-        mesh.texcoords = (float*)RL_MALLOC(vertexIndex * 2 * sizeof(float));
-        mesh.indices = (unsigned short*)RL_MALLOC(indexIndex * sizeof(unsigned short));
+        opaqueMesh.vertices = (float*)RL_MALLOC(opaqueVertexIndex * 3 * sizeof(float));
+        opaqueMesh.texcoords = (float*)RL_MALLOC(opaqueVertexIndex * 2 * sizeof(float));
+        opaqueMesh.indices = (unsigned short*)RL_MALLOC(opaqueIndexIndex * sizeof(unsigned short));
         
-        memcpy(mesh.vertices, vertices, vertexIndex * 3 * sizeof(float));
-        memcpy(mesh.texcoords, texCoords, vertexIndex * 2 * sizeof(float));
-        memcpy(mesh.indices, indices, indexIndex * sizeof(unsigned short));
+        memcpy(opaqueMesh.vertices, opaqueVertices, opaqueVertexIndex * 3 * sizeof(float));
+        memcpy(opaqueMesh.texcoords, opaqueTexCoords, opaqueVertexIndex * 2 * sizeof(float));
+        memcpy(opaqueMesh.indices, opaqueIndices, opaqueIndexIndex * sizeof(unsigned short));
         
         // Upload mesh to GPU
-        UploadMesh(&mesh, false);
+        UploadMesh(&opaqueMesh, false);
         
-        chunk->mesh = mesh;
+        chunk->mesh = opaqueMesh;
+        chunk->vertexCount = opaqueVertexIndex;
+        chunk->triangleCount = opaqueIndexIndex / 3;
+    }
+    
+    // Create transparent mesh
+    if (transparentVertexIndex > 0) {
+        Mesh transparentMesh = { 0 };
+        transparentMesh.vertexCount = transparentVertexIndex;
+        transparentMesh.triangleCount = transparentIndexIndex / 3;
         
-        // Create material with texture atlas and enable alpha blending
+        // Allocate and copy vertex data
+        transparentMesh.vertices = (float*)RL_MALLOC(transparentVertexIndex * 3 * sizeof(float));
+        transparentMesh.texcoords = (float*)RL_MALLOC(transparentVertexIndex * 2 * sizeof(float));
+        transparentMesh.indices = (unsigned short*)RL_MALLOC(transparentIndexIndex * sizeof(unsigned short));
+        
+        memcpy(transparentMesh.vertices, transparentVertices, transparentVertexIndex * 3 * sizeof(float));
+        memcpy(transparentMesh.texcoords, transparentTexCoords, transparentVertexIndex * 2 * sizeof(float));
+        memcpy(transparentMesh.indices, transparentIndices, transparentIndexIndex * sizeof(unsigned short));
+        
+        // Upload mesh to GPU
+        UploadMesh(&transparentMesh, false);
+        
+        chunk->transparentMesh = transparentMesh;
+        chunk->transparentVertexCount = transparentVertexIndex;
+        chunk->transparentTriangleCount = transparentIndexIndex / 3;
+    }
+    
+    // Create materials for both meshes
+    if (opaqueVertexIndex > 0 || transparentVertexIndex > 0) {
         chunk->material = LoadMaterialDefault();
         if (textureManager.atlas.id > 0) {
             SetMaterialTexture(&chunk->material, MATERIAL_MAP_DIFFUSE, textureManager.atlas);
-            
-            // Enable alpha blending for transparency support
             chunk->material.maps[MATERIAL_MAP_DIFFUSE].color = (Color){255, 255, 255, 255};
-            
-            // Set material shader to support alpha blending (use default shader with alpha)
-            // The default shader should handle alpha blending if the texture has alpha channel
-        } else {
-            printf("WARNING: No valid texture atlas to bind to material!\n");
+        }
+        
+        // Create transparent material
+        chunk->transparentMaterial = LoadMaterialDefault();
+        if (textureManager.atlas.id > 0) {
+            SetMaterialTexture(&chunk->transparentMaterial, MATERIAL_MAP_DIFFUSE, textureManager.atlas);
+            chunk->transparentMaterial.maps[MATERIAL_MAP_DIFFUSE].color = (Color){255, 255, 255, 255};
         }
         
         chunk->hasMesh = true;
     }
     
     // Free temporary arrays
-    free(vertices);
-    free(texCoords);
-    free(indices);
+    free(opaqueVertices);
+    free(opaqueTexCoords);
+    free(opaqueIndices);
+    free(transparentVertices);
+    free(transparentTexCoords);
+    free(transparentIndices);
 }
 
 void AddFaceToMesh(Vector3 position, int faceIndex, BlockType block, 

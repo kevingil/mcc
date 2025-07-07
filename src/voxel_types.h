@@ -243,11 +243,17 @@ typedef struct {
     bool isVisible;
     
     // Rendering data
-    Mesh mesh;
-    Material material;
+    Mesh mesh;                      // Opaque blocks mesh
+    Material material;              // Opaque blocks material
     bool hasMesh;
     int vertexCount;
     int triangleCount;
+    
+    // Transparent rendering data
+    Mesh transparentMesh;           // Transparent blocks mesh
+    Material transparentMaterial;   // Transparent blocks material
+    int transparentVertexCount;
+    int transparentTriangleCount;
 } Chunk;
 
 //----------------------------------------------------------------------------------
