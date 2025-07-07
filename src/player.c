@@ -119,14 +119,8 @@ void HandlePlayerInput(Player* player) {
         // Select block from inventory with Enter
         if (IsKeyPressed(KEY_ENTER) && player->inventory.blocks[player->inventorySelectedSlot] != BLOCK_AIR) {
             player->selectedBlock = player->inventory.blocks[player->inventorySelectedSlot];
-            // Add to hotbar if there's space
-            for (int i = 0; i < HOTBAR_SIZE; i++) {
-                if (player->hotbar[i] == BLOCK_AIR) {
-                    player->hotbar[i] = player->selectedBlock;
-                    player->hotbarSlot = i;
-                    break;
-                }
-            }
+            // Place in current hotbar slot (replace whatever is there)
+            player->hotbar[player->hotbarSlot] = player->selectedBlock;
         }
         
         // Mouse click selection in inventory
@@ -137,14 +131,8 @@ void HandlePlayerInput(Player* player) {
                 player->inventorySelectedSlot = mouseSlot;
                 if (player->inventory.blocks[mouseSlot] != BLOCK_AIR) {
                     player->selectedBlock = player->inventory.blocks[mouseSlot];
-                    // Add to hotbar if there's space
-                    for (int i = 0; i < HOTBAR_SIZE; i++) {
-                        if (player->hotbar[i] == BLOCK_AIR) {
-                            player->hotbar[i] = player->selectedBlock;
-                            player->hotbarSlot = i;
-                            break;
-                        }
-                    }
+                    // Place in current hotbar slot (replace whatever is there)
+                    player->hotbar[player->hotbarSlot] = player->selectedBlock;
                 }
             }
         }
