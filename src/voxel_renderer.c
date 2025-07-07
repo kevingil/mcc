@@ -5,6 +5,30 @@
 #include <string.h>
 #include <stdio.h>
 
+
+/*
+---------------------------------------------------------------------------------
+Voxel Renderer
+
+Chunk-based voxel world rendering with dual-pass transparency.
+Each chunk generates two separate meshes: one for opaque blocks and one for transparent
+blocks (e.g., glass, leaves, water). During rendering, opaque meshes are drawn first
+(front-to-back) with depth writing enabled, followed by transparent meshes (back-to-front)
+with depth masking disabled to ensure correct alpha blending.
+
+Block textures are packed into a single atlas for efficient GPU usage. Texture coordinates
+for each block face are precomputed and stored in the texture manager. Face culling and
+neighbor checks are used to avoid drawing hidden faces, improving performance.
+
+The renderer integrates with the world/chunk system and player camera. It exposes functions
+to update chunk meshes when blocks change, and to render visible chunks based on camera
+frustum culling. All block face geometry, normals, and UVs are generated procedurally.
+
+---------------------------------------------------------------------------------
+*/
+
+
+
 //----------------------------------------------------------------------------------
 // Local Constants
 //----------------------------------------------------------------------------------
