@@ -135,7 +135,7 @@ void GenerateChunkMesh(Chunk* chunk, VoxelWorld* world) {
     int indexIndex = 0;
     
     // Generate mesh for each block in chunk
-    for (int x = 0; x < CHUNK_SIZE; x++)
+    for (int x = 0; x < CHUNK_SIZE; x++) {
         for (int y = 0; y < WORLD_HEIGHT; y++) {
             for (int z = 0; z < CHUNK_SIZE; z++) {
                 BlockType block = chunk->blocks[x][y][z];
