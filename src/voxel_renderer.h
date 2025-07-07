@@ -17,10 +17,17 @@ void RenderChunk(Chunk* chunk, Camera3D camera);
 void UpdateChunkMesh(Chunk* chunk, VoxelWorld* world);
 void UnloadVoxelRenderer(void);
 
+// Texture management
+void InitTextureManager(void);
+void LoadBlockTextures(void);
+void UnloadTextureManager(void);
+int GetTextureIndex(const char* textureName);
+void GetBlockTextureUV(BlockType block, int faceIndex, float* u, float* v, float* w, float* h);
+
 // Mesh generation
 void GenerateChunkMesh(Chunk* chunk, VoxelWorld* world);
 void AddFaceToMesh(Vector3 position, int faceIndex, BlockType block, 
-                   float* vertices, float* colors, int* vertexIndex);
+                   float* vertices, float* texCoords, int* vertexIndex);
 bool ShouldRenderFace(VoxelWorld* world, BlockPos position, int faceIndex);
 
 // Culling and optimization
