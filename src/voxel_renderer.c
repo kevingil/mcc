@@ -645,4 +645,154 @@ bool BlockNeedsAlphaBlending(BlockType block) {
         default:
             return false;
     }
+}
+
+const char* GetBlockTextureName(BlockType block, int faceIndex) {
+    // Map block types and faces to texture names (same logic as GetBlockTextureUV)
+    switch (block) {
+        case BLOCK_GRASS:
+            if (faceIndex == FACE_TOP) return "grass_block_top";
+            else if (faceIndex == FACE_BOTTOM) return "dirt";
+            else return "grass_block_side";
+        case BLOCK_DIRT: return "dirt";
+        case BLOCK_STONE: return "stone";
+        case BLOCK_COBBLESTONE: return "cobblestone";
+        case BLOCK_BEDROCK: return "bedrock";
+        case BLOCK_SAND: return "sand";
+        case BLOCK_GRAVEL: return "gravel";
+        case BLOCK_WATER: return "water_still";
+        
+        // Wood blocks
+        case BLOCK_OAK_LOG:
+            if (faceIndex == FACE_TOP || faceIndex == FACE_BOTTOM) return "oak_log_top";
+            else return "oak_log";
+        case BLOCK_OAK_PLANKS: return "oak_planks";
+        case BLOCK_OAK_LEAVES: return "oak_leaves";
+        case BLOCK_BIRCH_LOG:
+            if (faceIndex == FACE_TOP || faceIndex == FACE_BOTTOM) return "birch_log_top";
+            else return "birch_log";
+        case BLOCK_BIRCH_PLANKS: return "birch_planks";
+        case BLOCK_BIRCH_LEAVES: return "birch_leaves";
+        case BLOCK_ACACIA_LOG:
+            if (faceIndex == FACE_TOP || faceIndex == FACE_BOTTOM) return "acacia_log_top";
+            else return "acacia_log";
+        case BLOCK_ACACIA_PLANKS: return "acacia_planks";
+        case BLOCK_ACACIA_LEAVES: return "acacia_leaves";
+        case BLOCK_DARK_OAK_LOG:
+            if (faceIndex == FACE_TOP || faceIndex == FACE_BOTTOM) return "dark_oak_log_top";
+            else return "dark_oak_log";
+        case BLOCK_DARK_OAK_PLANKS: return "dark_oak_planks";
+        case BLOCK_DARK_OAK_LEAVES: return "dark_oak_leaves";
+        
+        // Stone variants
+        case BLOCK_STONE_BRICKS: return "stone_bricks";
+        case BLOCK_MOSSY_STONE_BRICKS: return "mossy_stone_bricks";
+        case BLOCK_ANDESITE: return "andesite";
+        case BLOCK_GRANITE: return "granite";
+        case BLOCK_DIORITE: return "diorite";
+        case BLOCK_MOSSY_COBBLESTONE: return "mossy_cobblestone";
+        case BLOCK_SMOOTH_STONE: return "smooth_stone";
+        
+        // Sandstone
+        case BLOCK_SANDSTONE:
+            if (faceIndex == FACE_TOP) return "sandstone_top";
+            else if (faceIndex == FACE_BOTTOM) return "sandstone_bottom";
+            else return "sandstone";
+        case BLOCK_CHISELED_SANDSTONE: return "chiseled_sandstone";
+        case BLOCK_CUT_SANDSTONE: return "cut_sandstone";
+        case BLOCK_RED_SAND: return "red_sand";
+        case BLOCK_RED_SANDSTONE: return "red_sandstone";
+        
+        // Ores
+        case BLOCK_COAL_ORE: return "coal_ore";
+        case BLOCK_IRON_ORE: return "iron_ore";
+        case BLOCK_GOLD_ORE: return "gold_ore";
+        case BLOCK_DIAMOND_ORE: return "diamond_ore";
+        case BLOCK_REDSTONE_ORE: return "redstone_ore";
+        case BLOCK_EMERALD_ORE: return "emerald_ore";
+        case BLOCK_LAPIS_ORE: return "lapis_ore";
+        
+        // Metal blocks
+        case BLOCK_IRON_BLOCK: return "iron_block";
+        case BLOCK_GOLD_BLOCK: return "gold_block";
+        case BLOCK_DIAMOND_BLOCK: return "diamond_block";
+        case BLOCK_EMERALD_BLOCK: return "emerald_block";
+        case BLOCK_REDSTONE_BLOCK: return "redstone_block";
+        case BLOCK_LAPIS_BLOCK: return "lapis_block";
+        case BLOCK_COAL_BLOCK: return "coal_block";
+        
+        // Wool blocks
+        case BLOCK_WHITE_WOOL: return "white_wool";
+        case BLOCK_ORANGE_WOOL: return "orange_wool";
+        case BLOCK_MAGENTA_WOOL: return "magenta_wool";
+        case BLOCK_LIGHT_BLUE_WOOL: return "light_blue_wool";
+        case BLOCK_YELLOW_WOOL: return "yellow_wool";
+        case BLOCK_LIME_WOOL: return "lime_wool";
+        case BLOCK_PINK_WOOL: return "pink_wool";
+        case BLOCK_GRAY_WOOL: return "gray_wool";
+        case BLOCK_LIGHT_GRAY_WOOL: return "light_gray_wool";
+        case BLOCK_CYAN_WOOL: return "cyan_wool";
+        case BLOCK_PURPLE_WOOL: return "purple_wool";
+        case BLOCK_BLUE_WOOL: return "blue_wool";
+        case BLOCK_BROWN_WOOL: return "brown_wool";
+        case BLOCK_GREEN_WOOL: return "green_wool";
+        case BLOCK_RED_WOOL: return "red_wool";
+        case BLOCK_BLACK_WOOL: return "black_wool";
+        
+        // Glass
+        case BLOCK_GLASS: return "glass";
+        case BLOCK_WHITE_STAINED_GLASS: return "white_stained_glass";
+        case BLOCK_ORANGE_STAINED_GLASS: return "orange_stained_glass";
+        case BLOCK_MAGENTA_STAINED_GLASS: return "magenta_stained_glass";
+        case BLOCK_LIGHT_BLUE_STAINED_GLASS: return "light_blue_stained_glass";
+        case BLOCK_YELLOW_STAINED_GLASS: return "yellow_stained_glass";
+        case BLOCK_LIME_STAINED_GLASS: return "lime_stained_glass";
+        case BLOCK_PINK_STAINED_GLASS: return "pink_stained_glass";
+        case BLOCK_GRAY_STAINED_GLASS: return "gray_stained_glass";
+        case BLOCK_LIGHT_GRAY_STAINED_GLASS: return "light_gray_stained_glass";
+        case BLOCK_CYAN_STAINED_GLASS: return "cyan_stained_glass";
+        case BLOCK_PURPLE_STAINED_GLASS: return "purple_stained_glass";
+        case BLOCK_BLUE_STAINED_GLASS: return "blue_stained_glass";
+        case BLOCK_BROWN_STAINED_GLASS: return "brown_stained_glass";
+        case BLOCK_GREEN_STAINED_GLASS: return "green_stained_glass";
+        case BLOCK_RED_STAINED_GLASS: return "red_stained_glass";
+        case BLOCK_BLACK_STAINED_GLASS: return "black_stained_glass";
+        
+        // Special blocks
+        case BLOCK_BRICKS: return "bricks";
+        case BLOCK_BOOKSHELF: 
+            if (faceIndex == FACE_TOP || faceIndex == FACE_BOTTOM) return "oak_planks";
+            else return "bookshelf";
+        case BLOCK_CRAFTING_TABLE:
+            if (faceIndex == FACE_TOP) return "crafting_table_top";
+            else if (faceIndex == FACE_BOTTOM) return "oak_planks";
+            else return "crafting_table_side";
+        case BLOCK_FURNACE: return "furnace_side";
+        case BLOCK_CHEST: return "chest";
+        case BLOCK_GLOWSTONE: return "glowstone";
+        case BLOCK_OBSIDIAN: return "obsidian";
+        case BLOCK_NETHERRACK: return "netherrack";
+        case BLOCK_SOUL_SAND: return "soul_sand";
+        case BLOCK_END_STONE: return "end_stone";
+        case BLOCK_PURPUR_BLOCK: return "purpur_block";
+        case BLOCK_QUARTZ_BLOCK: return "quartz_block_side";
+        case BLOCK_PACKED_ICE: return "packed_ice";
+        case BLOCK_BLUE_ICE: return "blue_ice";
+        case BLOCK_ICE: return "ice";
+        case BLOCK_SNOW_BLOCK: return "snow";
+        case BLOCK_CACTUS:
+            if (faceIndex == FACE_TOP) return "cactus_top";
+            else if (faceIndex == FACE_BOTTOM) return "cactus_bottom";
+            else return "cactus_side";
+        case BLOCK_PUMPKIN: return "pumpkin_side";
+        case BLOCK_JACK_O_LANTERN: 
+            if (faceIndex == FACE_FRONT) return "jack_o_lantern";
+            else return "pumpkin_side";
+        case BLOCK_MELON: return "melon_side";
+        case BLOCK_HAY_BLOCK:
+            if (faceIndex == FACE_TOP || faceIndex == FACE_BOTTOM) return "hay_block_top";
+            else return "hay_block_side";
+        
+        default: return "stone";
+    }
 } 
