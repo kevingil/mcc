@@ -41,16 +41,14 @@ void UpdateVoxelWorld(VoxelWorld* world, Vector3 playerPosition) {
 void UnloadVoxelWorld(VoxelWorld* world) {
     for (int i = 0; i < MAX_CHUNKS; i++) {
         if (world->chunks[i].isLoaded && world->chunks[i].hasMesh) {
-            // Unload opaque mesh and material
+            // Unload opaque mesh geometry only
             if (world->chunks[i].vertexCount > 0) {
                 UnloadMesh(world->chunks[i].mesh);
-                UnloadMaterial(world->chunks[i].material);
             }
             
-            // Unload transparent mesh and material
+            // Unload transparent mesh geometry only
             if (world->chunks[i].transparentVertexCount > 0) {
                 UnloadMesh(world->chunks[i].transparentMesh);
-                UnloadMaterial(world->chunks[i].transparentMaterial);
             }
             
             world->chunks[i].hasMesh = false;
@@ -111,16 +109,14 @@ void UnloadChunk(VoxelWorld* world, int index) {
     
     // Unload mesh and material if they exist
     if (chunk->hasMesh) {
-        // Unload opaque mesh and material
+        // Unload opaque mesh geometry only
         if (chunk->vertexCount > 0) {
             UnloadMesh(chunk->mesh);
-            UnloadMaterial(chunk->material);
         }
         
-        // Unload transparent mesh and material
+        // Unload transparent mesh geometry only
         if (chunk->transparentVertexCount > 0) {
             UnloadMesh(chunk->transparentMesh);
-            UnloadMaterial(chunk->transparentMaterial);
         }
         
         chunk->hasMesh = false;

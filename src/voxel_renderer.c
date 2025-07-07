@@ -39,6 +39,9 @@ frustum culling. All block face geometry, normals, and UVs are generated procedu
 // Global Variables
 //----------------------------------------------------------------------------------
 static TextureManager textureManager = {0};
+static Material globalOpaqueMaterial = {0};
+static Material globalTransparentMaterial = {0};
+static bool materialsInitialized = false;
 
 // Face normal vectors
 static const Vector3 faceNormals[6] = {
@@ -87,9 +90,34 @@ static const Vector2 faceUVs[4] = {
 //----------------------------------------------------------------------------------
 // Rendering Functions
 //----------------------------------------------------------------------------------
+void InitGlobalMaterials(void) {
+    if (materialsInitialized) {
+        // Clean up existing materials
+        UnloadMaterial(globalOpaqueMaterial);
+        UnloadMaterial(globalTransparentMaterial);
+    }
+    
+    // Create opaque material
+    globalOpaqueMaterial = LoadMaterialDefault();
+    if (textureManager.atlas.id > 0) {
+        SetMaterialTexture(&globalOpaqueMaterial, MATERIAL_MAP_DIFFUSE, textureManager.atlas);
+        globalOpaqueMaterial.maps[MATERIAL_MAP_DIFFUSE].color = (Color){255, 255, 255, 255};
+    }
+    
+    // Create transparent material
+    globalTransparentMaterial = LoadMaterialDefault();
+    if (textureManager.atlas.id > 0) {
+        SetMaterialTexture(&globalTransparentMaterial, MATERIAL_MAP_DIFFUSE, textureManager.atlas);
+        globalTransparentMaterial.maps[MATERIAL_MAP_DIFFUSE].color = (Color){255, 255, 255, 255};
+    }
+    
+    materialsInitialized = true;
+}
+
 void InitVoxelRenderer(void) {
     InitTextureManager();
     LoadBlockTextures();
+    InitGlobalMaterials();
     
     // Enable depth testing for proper 3D rendering
     // Alpha blending is handled automatically by raylib when textures have alpha
@@ -173,6 +201,13 @@ void UpdateChunkMesh(Chunk* chunk, VoxelWorld* world) {
 }
 
 void UnloadVoxelRenderer(void) {
+    // Clean up global materials
+    if (materialsInitialized) {
+        UnloadMaterial(globalOpaqueMaterial);
+        UnloadMaterial(globalTransparentMaterial);
+        materialsInitialized = false;
+    }
+    
     UnloadTextureManager();
 }
 
@@ -180,11 +215,29 @@ void UnloadVoxelRenderer(void) {
 // Mesh Generation Functions
 //----------------------------------------------------------------------------------
 void GenerateChunkMesh(Chunk* chunk, VoxelWorld* world) {
-    // Free existing mesh if it exists
+    // Free existing mesh geometry if it exists, but KEEP materials
     if (chunk->hasMesh) {
-        UnloadMesh(chunk->mesh);
-        UnloadMaterial(chunk->material);
-        chunk->hasMesh = false;
+        // Unload opaque mesh geometry only
+        if (chunk->vertexCount > 0) {
+            UnloadMesh(chunk->mesh);
+        }
+        
+        // Unload transparent mesh geometry only  
+        if (chunk->transparentVertexCount > 0) {
+            UnloadMesh(chunk->transparentMesh);
+        }
+        
+        // Reset counts but keep materials
+        chunk->vertexCount = 0;
+        chunk->triangleCount = 0;
+        chunk->transparentVertexCount = 0;
+        chunk->transparentTriangleCount = 0;
+    }
+    
+    // Validate texture atlas before proceeding
+    if (!ValidateTextureManager()) {
+        printf("Error: Cannot generate chunk mesh without valid texture manager\n");
+        return;
     }
     
     // Create separate arrays for opaque and transparent blocks
@@ -294,21 +347,17 @@ void GenerateChunkMesh(Chunk* chunk, VoxelWorld* world) {
         chunk->transparentTriangleCount = transparentIndexIndex / 3;
     }
     
-    // Create materials for both meshes
+    // Assign global materials to the chunk
+    if (opaqueVertexIndex > 0) {
+        chunk->material = globalOpaqueMaterial;
+    }
+    
+    if (transparentVertexIndex > 0) {
+        chunk->transparentMaterial = globalTransparentMaterial;
+    }
+    
+    // Set hasMesh flag only if we actually created something
     if (opaqueVertexIndex > 0 || transparentVertexIndex > 0) {
-        chunk->material = LoadMaterialDefault();
-        if (textureManager.atlas.id > 0) {
-            SetMaterialTexture(&chunk->material, MATERIAL_MAP_DIFFUSE, textureManager.atlas);
-            chunk->material.maps[MATERIAL_MAP_DIFFUSE].color = (Color){255, 255, 255, 255};
-        }
-        
-        // Create transparent material
-        chunk->transparentMaterial = LoadMaterialDefault();
-        if (textureManager.atlas.id > 0) {
-            SetMaterialTexture(&chunk->transparentMaterial, MATERIAL_MAP_DIFFUSE, textureManager.atlas);
-            chunk->transparentMaterial.maps[MATERIAL_MAP_DIFFUSE].color = (Color){255, 255, 255, 255};
-        }
-        
         chunk->hasMesh = true;
     }
     
@@ -547,6 +596,32 @@ int GetTextureIndex(const char* textureName) {
 
 Texture2D GetTextureAtlas(void) {
     return textureManager.atlas;
+}
+
+bool ValidateTextureManager(void) {
+    // Check if texture atlas is valid
+    if (textureManager.atlas.id == 0 || textureManager.textureCount == 0) {
+        // Unload existing resources
+        if (textureManager.atlas.id > 0) {
+            UnloadTexture(textureManager.atlas);
+        }
+        
+        // Reinitialize texture manager
+        InitTextureManager();
+        LoadBlockTextures();
+        
+        // Check if reload was successful
+        if (textureManager.atlas.id > 0 && textureManager.textureCount > 0) {
+            // Reinitialize global materials with new texture atlas
+            InitGlobalMaterials();
+            return true;
+        } else {
+            printf("Error: Failed to reload texture manager\n");
+            return false;
+        }
+    }
+    
+    return true; // Already valid
 }
 
 void GetBlockTextureUV(BlockType block, int faceIndex, float* u, float* v, float* w, float* h) {

@@ -24,6 +24,7 @@ void UnloadTextureManager(void);
 int GetTextureIndex(const char* textureName);
 void GetBlockTextureUV(BlockType block, int faceIndex, float* u, float* v, float* w, float* h);
 Texture2D GetTextureAtlas(void);
+bool ValidateTextureManager(void);
 
 // Block transparency and alpha blending
 bool BlockNeedsAlphaBlending(BlockType block);
