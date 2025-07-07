@@ -198,7 +198,11 @@ void GenerateChunkMesh(Chunk* chunk, VoxelWorld* world) {
         
         // Create material with texture atlas
         chunk->material = LoadMaterialDefault();
-        SetMaterialTexture(&chunk->material, MATERIAL_MAP_DIFFUSE, textureManager.atlas);
+        if (textureManager.atlas.id > 0) {
+            SetMaterialTexture(&chunk->material, MATERIAL_MAP_DIFFUSE, textureManager.atlas);
+        } else {
+            printf("WARNING: No valid texture atlas to bind to material!\n");
+        }
         
         chunk->hasMesh = true;
     }
@@ -316,58 +320,62 @@ void LoadBlockTextures(void) {
     
     int textureCount = sizeof(textureNames) / sizeof(textureNames[0]);
     int texturesPerRow = TEXTURE_ATLAS_SIZE / TEXTURE_SIZE;
-    int atlasRows = (textureCount + texturesPerRow - 1) / texturesPerRow;
     
-    // Create atlas image
-    Image atlasImage = GenImageColor(TEXTURE_ATLAS_SIZE, TEXTURE_ATLAS_SIZE, (Color){0, 0, 0, 0});
+    // Create atlas image with opaque white background
+    Image atlasImage = GenImageColor(TEXTURE_ATLAS_SIZE, TEXTURE_ATLAS_SIZE, WHITE);
+    
+    int successfulLoads = 0;
+    int placeholderCount = 0;
     
     for (int i = 0; i < textureCount && i < MAX_BLOCK_TEXTURES; i++) {
-        // Construct file path
+        // Try multiple potential file paths
         char filePath[256];
-        snprintf(filePath, sizeof(filePath), "src/resources/textures/block/%s.png", textureNames[i]);
-        
-        // Try to load the texture
         Image blockTexture = {0};
-        if (FileExists(filePath)) {
-            blockTexture = LoadImage(filePath);
-        } else {
-            // If texture doesn't exist, try common alternatives
-            const char* alternatives[] = {
-                "stone.png", "dirt.png", "grass_block_side.png"
-            };
+        bool loaded = false;
+        
+        // Try different possible paths
+        const char* possiblePaths[] = {
+            "src/resources/textures/block/%s.png",
+            "resources/textures/block/%s.png", 
+            "./src/resources/textures/block/%s.png",
+            "./resources/textures/block/%s.png"
+        };
+        
+        for (int pathIdx = 0; pathIdx < 4; pathIdx++) {
+            snprintf(filePath, sizeof(filePath), possiblePaths[pathIdx], textureNames[i]);
             
-            bool found = false;
-            for (int alt = 0; alt < 3; alt++) {
-                snprintf(filePath, sizeof(filePath), "src/resources/textures/block/%s", alternatives[alt]);
-                if (FileExists(filePath)) {
-                    blockTexture = LoadImage(filePath);
-                    found = true;
+            if (FileExists(filePath)) {
+                blockTexture = LoadImage(filePath);
+                if (blockTexture.data != NULL) {
+                    loaded = true;
+                    successfulLoads++;
                     break;
                 }
             }
-            
-            if (!found) {
-                // Create a placeholder colored texture
-                Color placeholderColors[] = {
-                    GREEN, DARKGREEN, BROWN, GRAY, DARKGRAY, (Color){64,64,64,255}, 
-                    BEIGE, (Color){136,136,136,255}, (Color){139,69,19,255}, (Color){162,130,78,255},
-                    DARKGREEN, (Color){220,220,220,255}, (Color){192,175,121,255}, (Color){128,167,85,255},
-                    (Color){186,99,64,255}, (Color){168,90,50,255}, (Color){99,128,15,255}, (Color){66,43,20,255},
-                    (Color){123,123,123,255}, (Color){115,121,105,255}, (Color){132,134,132,255}, (Color){149,103,85,255},
-                    (Color){188,188,188,255}, (Color){245,238,173,255}, (Color){84,84,84,255}, (Color){135,106,97,255},
-                    (Color){143,140,125,255}, (Color){92,219,213,255}, (Color){220,220,220,255}, GOLD,
-                    (Color){93,219,213,255}, WHITE, ORANGE, BLUE, RED, (Color){255,255,255,128},
-                    (Color){150,97,83,255}, (Color){139,69,19,255}, (Color){255,207,139,255}, (Color){20,18,30,255},
-                    (Color){97,38,38,255}, (Color){221,223,165,255}, (Color){235,229,222,255}, (Color){160,160,255,255}
-                };
-                
-                Color color = (i < sizeof(placeholderColors) / sizeof(placeholderColors[0])) ? 
-                              placeholderColors[i] : WHITE;
-                blockTexture = GenImageColor(TEXTURE_SIZE, TEXTURE_SIZE, color);
-            }
         }
         
-        // Resize texture to standard size if needed
+        if (!loaded) {
+            // Create a placeholder colored texture
+            Color placeholderColors[] = {
+                GREEN, DARKGREEN, BROWN, GRAY, DARKGRAY, (Color){64,64,64,255}, 
+                BEIGE, (Color){136,136,136,255}, (Color){139,69,19,255}, (Color){162,130,78,255},
+                DARKGREEN, (Color){220,220,220,255}, (Color){192,175,121,255}, (Color){128,167,85,255},
+                (Color){186,99,64,255}, (Color){168,90,50,255}, (Color){99,128,15,255}, (Color){66,43,20,255},
+                (Color){123,123,123,255}, (Color){115,121,105,255}, (Color){132,134,132,255}, (Color){149,103,85,255},
+                (Color){188,188,188,255}, (Color){245,238,173,255}, (Color){84,84,84,255}, (Color){135,106,97,255},
+                (Color){143,140,125,255}, (Color){92,219,213,255}, (Color){220,220,220,255}, GOLD,
+                (Color){93,219,213,255}, WHITE, ORANGE, BLUE, RED, (Color){255,255,255,128},
+                (Color){150,97,83,255}, (Color){139,69,19,255}, (Color){255,207,139,255}, (Color){20,18,30,255},
+                (Color){97,38,38,255}, (Color){221,223,165,255}, (Color){235,229,222,255}, (Color){160,160,255,255}
+            };
+            
+            Color color = (i < sizeof(placeholderColors) / sizeof(placeholderColors[0])) ? 
+                          placeholderColors[i] : WHITE;
+            blockTexture = GenImageColor(TEXTURE_SIZE, TEXTURE_SIZE, color);
+            placeholderCount++;
+        }
+        
+        // Ensure texture is the correct size
         if (blockTexture.width != TEXTURE_SIZE || blockTexture.height != TEXTURE_SIZE) {
             ImageResize(&blockTexture, TEXTURE_SIZE, TEXTURE_SIZE);
         }
@@ -377,8 +385,10 @@ void LoadBlockTextures(void) {
         int y = (i / texturesPerRow) * TEXTURE_SIZE;
         
         // Copy texture to atlas
-        ImageDraw(&atlasImage, blockTexture, (Rectangle){0, 0, TEXTURE_SIZE, TEXTURE_SIZE}, 
-                  (Rectangle){x, y, TEXTURE_SIZE, TEXTURE_SIZE}, WHITE);
+        ImageDraw(&atlasImage, blockTexture, 
+                  (Rectangle){0, 0, TEXTURE_SIZE, TEXTURE_SIZE}, 
+                  (Rectangle){x, y, TEXTURE_SIZE, TEXTURE_SIZE}, 
+                  WHITE);
         
         // Store texture info
         strcpy(textureManager.textureNames[i], textureNames[i]);
@@ -400,7 +410,7 @@ void LoadBlockTextures(void) {
     // Set texture filter to point (pixelated) for retro look
     SetTextureFilter(textureManager.atlas, TEXTURE_FILTER_POINT);
     
-    printf("Loaded %d block textures into atlas\n", textureManager.textureCount);
+    printf("Block textures loaded: %d successful, %d placeholders\n", successfulLoads, placeholderCount);
 }
 
 void UnloadTextureManager(void) {

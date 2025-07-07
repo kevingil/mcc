@@ -22,6 +22,7 @@
 #include "voxel_renderer.h"
 #include "world_generation.h"
 #include "player.h"
+#include <stdio.h>
 
 //----------------------------------------------------------------------------------
 // Module Variables Definition (local)
