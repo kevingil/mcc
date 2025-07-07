@@ -38,6 +38,7 @@ void UnloadVoxelWorld(VoxelWorld* world) {
     for (int i = 0; i < MAX_CHUNKS; i++) {
         if (world->chunks[i].isLoaded && world->chunks[i].hasMesh) {
             UnloadMesh(world->chunks[i].mesh);
+            UnloadMaterial(world->chunks[i].material);
             world->chunks[i].hasMesh = false;
         }
         world->chunks[i].isLoaded = false;
@@ -90,9 +91,10 @@ void UnloadChunk(VoxelWorld* world, int index) {
     Chunk* chunk = &world->chunks[index];
     if (!chunk->isLoaded) return;
     
-    // Unload mesh if it exists
+    // Unload mesh and material if they exist
     if (chunk->hasMesh) {
         UnloadMesh(chunk->mesh);
+        UnloadMaterial(chunk->material);
         chunk->hasMesh = false;
     }
     
