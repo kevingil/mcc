@@ -209,6 +209,23 @@ void DrawGameplayScreen(void)
         DrawText(TextFormat("Ground Block: %d (%s)", groundBlock, 
                  groundBlock == BLOCK_AIR ? "AIR" : "SOLID"), 
                  10, 90, 20, groundBlock == BLOCK_AIR ? RED : GREEN);
+
+        // Always render block debug info, handle null/air targetBlock
+        BlockType targetBlock = GetBlock(&world, player.targetBlock);
+        const char* blockName = GetBlockName(targetBlock);
+        const char* textureName = GetBlockTextureName(targetBlock, FACE_TOP);
+
+        if (player.hasTarget && targetBlock != BLOCK_AIR) {
+            DrawText(TextFormat("Target Block: %s", blockName), 10, 110, 20, YELLOW);
+            DrawText(TextFormat("Texture: %s.png", textureName), 10, 130, 20, LIGHTGRAY);
+            DrawText(TextFormat("Block Pos: (%d, %d, %d)", 
+                     player.targetBlock.x, player.targetBlock.y, player.targetBlock.z), 
+                     10, 150, 20, GRAY);
+        } else {
+            DrawText("Target Block: (none)", 10, 110, 20, DARKGRAY);
+            DrawText("Texture: (none)", 10, 130, 20, DARKGRAY);
+            DrawText("Block Pos: (-, -, -)", 10, 150, 20, DARKGRAY);
+        }
     }
     
     // Controls help (when cursor is visible and game not paused)
