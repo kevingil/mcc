@@ -74,6 +74,24 @@ float GetTerrainHeight(int x, int z) {
     return WATER_LEVEL + height;
 }
 
+float GetSurfaceLevel(int x, int z) {
+    // Get the terrain height at this position
+    float terrainHeight = GetTerrainHeight(x, z);
+    int height = (int)terrainHeight;
+    
+    // Clamp height to world bounds
+    if (height < 0) height = 0;
+    if (height >= WORLD_HEIGHT) height = WORLD_HEIGHT - 1;
+    
+    // If terrain is above water level, surface is at terrain height + 1 (on top of grass)
+    // If terrain is at/below water level, surface is at water level + 1 (on top of water)
+    if (height > WATER_LEVEL) {
+        return height + 1.0f; // On top of grass block
+    } else {
+        return WATER_LEVEL + 1.0f; // On top of water
+    }
+}
+
 bool ShouldPlaceTree(int x, int z) {
     // Use noise to determine tree placement
     float treeNoise = PerlinNoise2D(x * 0.1f, z * 0.1f);
