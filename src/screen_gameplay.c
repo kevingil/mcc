@@ -63,8 +63,9 @@ void InitGameplayScreen(void)
         // Initialize voxel world
         InitVoxelWorld(&world);
         
-        // Initialize player at a good starting position
-        Vector3 startPosition = {0, 100, 0}; // Start safely above max terrain height (62+32=94)
+        // Initialize player at ground level instead of mid-air
+        float surfaceY = GetSurfaceLevel(0, 0); // Get surface at spawn point (0,0)
+        Vector3 startPosition = {0, surfaceY, 0}; // Start at ground level
         InitPlayer(&player, startPosition);
         
         // Load initial chunks near spawn BEFORE player physics start
