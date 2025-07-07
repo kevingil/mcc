@@ -545,6 +545,10 @@ int GetTextureIndex(const char* textureName) {
     return 0; // Default to first texture if not found
 }
 
+Texture2D GetTextureAtlas(void) {
+    return textureManager.atlas;
+}
+
 void GetBlockTextureUV(BlockType block, int faceIndex, float* u, float* v, float* w, float* h) {
     const char* textureName = "stone"; // Default
     
