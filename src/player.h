@@ -35,6 +35,11 @@ void DrawCrosshair(void);
 void DrawHotbar(Player* player);
 void DrawBlockOutline(BlockPos position);
 
+// Inventory functions
+void DrawInventory(Player* player);
+int GetInventorySlotAtMouse(Vector2 mousePos);
+const char* GetBlockName(BlockType block);
+
 #ifdef __cplusplus
 }
 #endif

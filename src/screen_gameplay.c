@@ -82,18 +82,25 @@ void UpdateGameplayScreen(void)
 {
     framesCounter++;
     
-    // Handle ESC key for pause menu
+    // Handle ESC key for pause menu (only when inventory is not open)
     if (IsKeyPressed(KEY_ESCAPE))
     {
-        gamePaused = !gamePaused;
-        pauseMenuSelection = 0; // Reset selection when opening menu
-        
-        if (gamePaused) {
-            EnableCursor(); // Show cursor in pause menu
+        // If inventory is open, close it first
+        if (player.inventoryOpen) {
+            player.inventoryOpen = false;
+            DisableCursor();
         } else {
-            DisableCursor(); // Hide cursor when resuming game
+            // Otherwise toggle pause menu
+            gamePaused = !gamePaused;
+            pauseMenuSelection = 0; // Reset selection when opening menu
+            
+            if (gamePaused) {
+                EnableCursor(); // Show cursor in pause menu
+            } else {
+                DisableCursor(); // Hide cursor when resuming game
+            }
+            PlaySound(fxCoin);
         }
-        PlaySound(fxCoin);
     }
     
     if (gamePaused)
@@ -137,7 +144,7 @@ void UpdateGameplayScreen(void)
         UpdatePlayer(&player, &world);
         
         // Exit to menu (alternative method - keeping ENTER as backup)
-        if (IsKeyPressed(KEY_ENTER) && IsCursorOnScreen())
+        if (IsKeyPressed(KEY_ENTER) && IsCursorOnScreen() && !player.inventoryOpen)
         {
             finishScreen = 1;
             PlaySound(fxCoin);
@@ -166,7 +173,12 @@ void DrawGameplayScreen(void)
     
     // 2D UI rendering
     if (!gamePaused) {
-        DrawPlayerUI(&player);
+        // Draw inventory UI if inventory is open, otherwise draw normal UI
+        if (player.inventoryOpen) {
+            DrawInventory(&player);
+        } else {
+            DrawPlayerUI(&player);
+        }
     }
     
     // Debug information (only when not paused)
@@ -212,8 +224,9 @@ void DrawGameplayScreen(void)
         DrawText("LEFT CLICK - Break block", 50, 260, 18, WHITE);
         DrawText("RIGHT CLICK - Place block", 50, 280, 18, WHITE);
         DrawText("1-9 - Select block type", 50, 300, 18, WHITE);
-        DrawText("ESC - Open pause menu", 50, 320, 18, WHITE);
-        DrawText("ENTER - Return to menu", 50, 340, 18, WHITE);
+        DrawText("E - Open inventory", 50, 320, 18, WHITE);
+        DrawText("ESC - Open pause menu", 50, 340, 18, WHITE);
+        DrawText("ENTER - Return to menu", 50, 360, 18, WHITE);
         
         DrawText("Click to start playing!", screenWidth/2 - 120, screenHeight - 50, 20, YELLOW);
     }
