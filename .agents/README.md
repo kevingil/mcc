@@ -39,7 +39,7 @@ Enter on the title screen starts the world. The rest of the controls are in the 
 bash .agents/test.sh
 ```
 
-Builds, starts the game on its own Xvfb, waits through the logo, and checks the title screen is drawn. It then presses Enter, waits until `Block textures loaded` shows up in the log, and checks the world frame is not blank. The process has to still be running at the end.
+Builds, starts the game on its own Xvfb, waits through the logo, and checks the title screen is drawn. It then presses Enter, waits until block textures load and the first burst of chunk meshes finishes, and checks the world frame is not blank. The process has to still be running at the end.
 
 Screenshots and logs go to `/tmp/mcc-test`. Set `MCC_TEST_OUT` to write them somewhere else.
 

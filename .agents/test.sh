@@ -39,7 +39,8 @@ export DISPLAY=":${DISPLAY_NUM}"
 export LIBGL_ALWAYS_SOFTWARE=1
 
 cd "$ROOT/src"
-"$ROOT/build/mcc/mcc" >"$OUT_DIR/game.log" 2>&1 &
+# Line-buffer the log so "Block textures loaded" shows up before the stdio buffer fills.
+stdbuf -oL -eL "$ROOT/build/mcc/mcc" >"$OUT_DIR/game.log" 2>&1 &
 GAME_PID=$!
 
 WID=""
@@ -70,22 +71,39 @@ awk -v m="$TITLE_MEAN" 'BEGIN { if (m+0 < 0.05) exit 1 }' \
   || { echo "title screenshot looks blank (mean=$TITLE_MEAN)" >&2; exit 1; }
 echo "title mean=$TITLE_MEAN"
 
-xdotool windowfocus "$WID"
-xdotool key --window "$WID" Return
-
+# XTEST key events (no --window) are what GLFW treats as real input.
+# Repeat only while the title screen is still up; an extra Enter in-game leaves the world.
 loaded=0
-for _ in $(seq 1 90); do
+for _ in $(seq 1 6); do
+  xdotool windowfocus --sync "$WID"
+  xdotool key --clearmodifiers Return
+  sleep 1.5
   if grep -q "Block textures loaded" "$OUT_DIR/game.log"; then
     loaded=1
     break
   fi
-  if ! kill -0 "$GAME_PID" 2>/dev/null; then
-    echo "game exited while loading the world" >&2
-    cat "$OUT_DIR/game.log" >&2
-    exit 1
+  import -window root "$OUT_DIR/title-probe.png"
+  probe="$(convert "$OUT_DIR/title-probe.png" -format '%[fx:mean]' info:)"
+  # Settled title screen mean is about 0.52. Leaving it means the key landed.
+  if ! awk -v m="$probe" 'BEGIN { exit !(m+0 > 0.45 && m+0 < 0.58) }'; then
+    break
   fi
-  sleep 1
 done
+
+if [ "$loaded" -ne 1 ]; then
+  for _ in $(seq 1 90); do
+    if grep -q "Block textures loaded" "$OUT_DIR/game.log"; then
+      loaded=1
+      break
+    fi
+    if ! kill -0 "$GAME_PID" 2>/dev/null; then
+      echo "game exited while loading the world" >&2
+      cat "$OUT_DIR/game.log" >&2
+      exit 1
+    fi
+    sleep 1
+  done
+fi
 
 if [ "$loaded" -ne 1 ]; then
   echo "world did not finish loading textures" >&2
@@ -93,8 +111,35 @@ if [ "$loaded" -ne 1 ]; then
   exit 1
 fi
 
-# Mesh upload follows the texture line. Give the first world frame time to present.
-sleep 4
+# The first gameplay frame uploads every visible chunk mesh before it swaps.
+# The window stays on the black transition until that burst stops.
+prev=-1
+stable=0
+for _ in $(seq 1 60); do
+  count="$(grep -c "Mesh uploaded successfully" "$OUT_DIR/game.log" || true)"
+  if [ "$count" -gt 0 ] && [ "$count" = "$prev" ]; then
+    stable=$((stable + 1))
+    if [ "$stable" -ge 2 ]; then
+      break
+    fi
+  else
+    stable=0
+  fi
+  prev="$count"
+  if ! kill -0 "$GAME_PID" 2>/dev/null; then
+    echo "game exited while meshing the world" >&2
+    cat "$OUT_DIR/game.log" >&2
+    exit 1
+  fi
+  sleep 1
+done
+
+if [ "$stable" -lt 2 ]; then
+  echo "world mesh upload did not finish" >&2
+  cat "$OUT_DIR/game.log" >&2
+  exit 1
+fi
+
 import -window root "$OUT_DIR/gameplay.png"
 GAME_MEAN="$(convert "$OUT_DIR/gameplay.png" -format '%[fx:mean]' info:)"
 awk -v m="$GAME_MEAN" 'BEGIN { if (m+0 < 0.05) exit 1 }' \
