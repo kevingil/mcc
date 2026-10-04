@@ -67,6 +67,7 @@ void InitGameplayScreen(void)
         Vector3 startPosition = { 0.0f, 0.0f, 0.0f };
 
         WorldSaveBind(GetActiveWorldFolder());
+        SetWorldGenerationSeed(WorldSaveSeed());
         InitVoxelWorld(&world);
 
         startPosition = (Vector3){ 0.0f, GetSurfaceLevel(0, 0), 0.0f };
@@ -282,8 +283,15 @@ void DrawGameplayScreen(void)
     {
         const char *worldName = GetActiveWorldName();
         int nameWidth = MeasureText(worldName, 20);
+        char seedLabel[32] = { 0 };
+        int seedWidth = 0;
+
         DrawText(worldName, GetScreenWidth()/2 - nameWidth/2 + 1, 9, 20, BLACK);
         DrawText(worldName, GetScreenWidth()/2 - nameWidth/2, 8, 20, WHITE);
+        snprintf(seedLabel, sizeof(seedLabel), "Seed %u", WorldSaveSeed());
+        seedWidth = MeasureText(seedLabel, 16);
+        DrawText(seedLabel, GetScreenWidth()/2 - seedWidth/2 + 1, 31, 16, BLACK);
+        DrawText(seedLabel, GetScreenWidth()/2 - seedWidth/2, 30, 16, WHITE);
     }
 }
 

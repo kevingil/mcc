@@ -37,7 +37,13 @@ void WorldSaveBind(const char *folder)
         LevelDataSetMeta(&currentLevel, GetActiveWorldName(), "Survival", "0.1.0", GetActiveWorldSeed(), 0);
     }
 
-    ClientLog("Loaded world '%s'", currentLevel.name);
+    ClientLog("Loaded world '%s' seed %u", currentLevel.name, currentLevel.seed);
+}
+
+unsigned int WorldSaveSeed(void)
+{
+    if (!bound) return 0;
+    return currentLevel.seed;
 }
 
 bool WorldSaveHasPlayer(void)

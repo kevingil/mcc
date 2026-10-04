@@ -8,6 +8,7 @@
 // Binds the active world folder, then reads level.dat.
 // Edited chunks go to region/r.<x>.<z>.mca. Unedited chunks stay generated.
 void WorldSaveBind(const char *folder);
+unsigned int WorldSaveSeed(void);
 bool WorldSaveHasPlayer(void);
 Vector3 WorldSavePlayerPosition(void);
 void WorldSaveSetSpawn(int x, int y, int z);
