@@ -10,7 +10,7 @@
 //----------------------------------------------------------------------------------
 // Types and Structures Definition
 //----------------------------------------------------------------------------------
-typedef enum GameScreen { UNKNOWN = -1, LOGO = 0, TITLE, OPTIONS, GAMEPLAY, ENDING } GameScreen;
+typedef enum GameScreen { UNKNOWN = -1, LOGO = 0, TITLE, OPTIONS, GAMEPLAY, ENDING, SELECT_WORLD, MULTIPLAYER } GameScreen;
 
 //----------------------------------------------------------------------------------
 // Global Variables Declaration (shared by several modules)
@@ -68,6 +68,26 @@ void UpdateEndingScreen(void);
 void DrawEndingScreen(void);
 void UnloadEndingScreen(void);
 int FinishEndingScreen(void);
+
+//----------------------------------------------------------------------------------
+// World Select Screen Functions Declaration
+//----------------------------------------------------------------------------------
+void InitSelectWorldScreen(void);
+void UpdateSelectWorldScreen(void);
+void DrawSelectWorldScreen(void);
+void UnloadSelectWorldScreen(void);
+int FinishSelectWorldScreen(void);
+
+//----------------------------------------------------------------------------------
+// Multiplayer Screen Functions Declaration
+//----------------------------------------------------------------------------------
+void InitMultiplayerScreen(void);
+void UpdateMultiplayerScreen(void);
+void DrawMultiplayerScreen(void);
+void UnloadMultiplayerScreen(void);
+int FinishMultiplayerScreen(void);
+
+void RequestGameExit(void);
 
 #ifdef __cplusplus
 }

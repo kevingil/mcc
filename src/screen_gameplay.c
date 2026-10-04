@@ -22,6 +22,7 @@
 #include "voxel_renderer.h"
 #include "world_generation.h"
 #include "player.h"
+#include "world_catalog.h"
 #include <stdio.h>
 
 //----------------------------------------------------------------------------------
@@ -254,6 +255,14 @@ void DrawGameplayScreen(void)
     if (gamePaused) {
         DrawPauseMenu();
     }
+
+    if (GetActiveWorldName()[0] != '\0')
+    {
+        const char *worldName = GetActiveWorldName();
+        int nameWidth = MeasureText(worldName, 20);
+        DrawText(worldName, GetScreenWidth()/2 - nameWidth/2 + 1, 9, 20, BLACK);
+        DrawText(worldName, GetScreenWidth()/2 - nameWidth/2, 8, 20, WHITE);
+    }
 }
 
 // Draw pause menu
@@ -328,6 +337,8 @@ void DrawPauseMenu(void)
 // Gameplay Screen Unload logic
 void UnloadGameplayScreen(void)
 {
+    EnableCursor();
+
     if (gameInitialized) {
         UnloadVoxelWorld(&world);
         UnloadVoxelRenderer();
