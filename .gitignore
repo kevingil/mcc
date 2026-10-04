@@ -1,5 +1,6 @@
 build/*
 saves/
+logs/
 .DS_Store
 .vscode/
 .idea/

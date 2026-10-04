@@ -27,7 +27,7 @@ The game opens on the OpenCraft title screen.
 - **Multiplayer** and **Realms** are listed and marked coming soon.
 - **Options...** and **Quit Game** do what they say.
 
-World records are stored in `saves/world_<id>/level.txt`.
+Worlds live in `saves/world_<id>/`. `level.dat` is gzip NBT for the name, seed, spawn, and player. Edited chunks are zlib NBT in `region/r.<x>.<z>.mca`. `level.txt` is the menu index. Client output goes to `logs/latest.log`, and the next launch gzips that file to `logs/YYYY-MM-DD-N.log.gz`.
 
 ### Controls
 
