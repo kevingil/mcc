@@ -36,7 +36,7 @@ const char* GetBlockTextureName(BlockType block, int faceIndex);
 void GenerateChunkMesh(Chunk* chunk, VoxelWorld* world);
 void AddFaceToMesh(Vector3 position, int faceIndex, BlockType block, 
                    float* vertices, float* texCoords, int* vertexIndex);
-bool ShouldRenderFace(VoxelWorld* world, BlockPos position, int faceIndex);
+bool ShouldRenderFace(VoxelWorld* world, BlockPos position, int faceIndex, BlockType current);
 
 // Culling and optimization
 bool IsChunkInFrustum(Chunk* chunk, Camera3D camera);

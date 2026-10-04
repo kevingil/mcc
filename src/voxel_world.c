@@ -1,6 +1,7 @@
 #include "voxel_world.h"
 #include "world_generation.h"
 #include "world_save.h"
+#include "water.h"
 #include "raymath.h"
 #include <string.h>
 #include <stdlib.h>
@@ -32,6 +33,7 @@ void InitVoxelWorld(VoxelWorld* world) {
 
 void UpdateVoxelWorld(VoxelWorld* world, Vector3 playerPosition) {
     world->playerPosition = playerPosition;
+    UpdateWater(world);
     
     // Load chunks around player
     LoadChunksAroundPlayer(world, playerPosition);
@@ -94,6 +96,7 @@ Chunk* LoadChunk(VoxelWorld* world, ChunkPos position) {
             chunk->modified = false;
 
             if (!WorldSaveLoadChunk(chunk)) GenerateChunk(chunk);
+            WaterWakeChunk(world, chunk);
             chunk->modified = false;
             chunk->needsRegen = true;
             chunk->isLoaded = true;
@@ -215,6 +218,7 @@ void SetBlock(VoxelWorld* world, BlockPos position, BlockType block) {
     chunk->blocks[localX][position.y][localZ] = block;
     chunk->modified = true;
     chunk->needsRegen = true;
+    WaterNotify(world, position);
     
     // Mark neighboring chunks for regeneration if block is on edge
     if (localX == 0) {
