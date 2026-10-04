@@ -77,6 +77,10 @@ float GetTerrainHeight(int x, int z) {
         frequency *= 2.0f;
     }
     
+    // Low continent noise opens lakes and oceans. High ground stays dry.
+    float continent = SimplexNoise2D(x*0.0025f, z*0.0025f);
+    if (continent < 0.05f) height -= (0.05f - continent)*48.0f;
+
     return WATER_LEVEL + height;
 }
 
@@ -96,6 +100,48 @@ float GetSurfaceLevel(int x, int z) {
     } else {
         return WATER_LEVEL + 1.0f; // On top of water
     }
+}
+
+bool FindShoreSpawn(Vector3 *position, float *yaw) {
+    int bestDist = 1000000;
+    int bestX = 0;
+    int bestZ = 0;
+    int faceX = 0;
+    int faceZ = 1;
+    bool found = false;
+
+    if ((position == NULL) || (yaw == NULL)) return false;
+
+    for (int radius = 1; radius <= 80; radius++) {
+        for (int x = -radius; x <= radius; x++) {
+            for (int z = -radius; z <= radius; z++) {
+                int dist = x*x + z*z;
+                if ((abs(x) != radius) && (abs(z) != radius)) continue;
+                if ((dist >= bestDist) || ((int)GetTerrainHeight(x, z) <= WATER_LEVEL)) continue;
+
+                for (int dir = 0; dir < 4; dir++) {
+                    int nx = x + ((dir == 0) ? 1 : (dir == 1) ? -1 : 0);
+                    int nz = z + ((dir == 2) ? 1 : (dir == 3) ? -1 : 0);
+                    if ((int)GetTerrainHeight(nx, nz) < WATER_LEVEL) {
+                        bestDist = dist;
+                        bestX = x;
+                        bestZ = z;
+                        faceX = nx - x;
+                        faceZ = nz - z;
+                        found = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (found) break;
+    }
+
+    if (!found) return false;
+
+    *position = (Vector3){ bestX + 0.5f, GetSurfaceLevel(bestX, bestZ), bestZ + 0.5f };
+    *yaw = atan2f((float)faceX, (float)faceZ);
+    return true;
 }
 
 bool ShouldPlaceTree(int x, int z) {
@@ -166,15 +212,12 @@ void GenerateChunk(Chunk* chunk) {
                     // Stone layer
                     chunk->blocks[x][y][z] = BLOCK_STONE;
                 } else if (y < height) {
-                    // Dirt layer
-                    chunk->blocks[x][y][z] = BLOCK_DIRT;
+                    if (height <= WATER_LEVEL + 2) chunk->blocks[x][y][z] = BLOCK_SAND;
+                    else chunk->blocks[x][y][z] = BLOCK_DIRT;
                 } else {
-                    // Top layer - grass or dirt based on height
-                    if (height > WATER_LEVEL) {
-                        chunk->blocks[x][y][z] = BLOCK_GRASS;
-                    } else {
-                        chunk->blocks[x][y][z] = BLOCK_DIRT;
-                    }
+                    // Beaches and lake beds are sand. Inland tops are grass.
+                    if (height <= WATER_LEVEL + 2) chunk->blocks[x][y][z] = BLOCK_SAND;
+                    else chunk->blocks[x][y][z] = BLOCK_GRASS;
                 }
             }
             

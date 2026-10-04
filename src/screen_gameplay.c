@@ -70,12 +70,19 @@ void InitGameplayScreen(void)
         SetWorldGenerationSeed(WorldSaveSeed());
         InitVoxelWorld(&world);
 
+        Vector3 shore = { 0.0f, 0.0f, 0.0f };
+        float shoreYaw = 0.0f;
+        bool onShore = false;
+
         startPosition = (Vector3){ 0.0f, GetSurfaceLevel(0, 0), 0.0f };
+        if (!WorldSaveHasPlayer()) onShore = FindShoreSpawn(&shore, &shoreYaw);
+        if (onShore) startPosition = shore;
         if (WorldSaveHasPlayer()) startPosition = WorldSavePlayerPosition();
-        else WorldSaveSetSpawn(0, (int)startPosition.y, 0);
+        else WorldSaveSetSpawn((int)startPosition.x, (int)startPosition.y, (int)startPosition.z);
 
         InitPlayer(&player, startPosition);
         WorldSaveApplyPlayer(&player);
+        if (onShore) SetPlayerLook(&player, shoreYaw, -0.45f);
 
         // Load initial chunks near spawn BEFORE player physics start
         // otherwise player will fall through the world forever
@@ -266,10 +273,11 @@ void DrawGameplayScreen(void)
         DrawText("LEFT SHIFT - Run", 50, 240, 18, WHITE);
         DrawText("LEFT CLICK - Break block", 50, 260, 18, WHITE);
         DrawText("RIGHT CLICK - Place block", 50, 280, 18, WHITE);
-        DrawText("1-9 - Select block type", 50, 300, 18, WHITE);
-        DrawText("E - Open inventory", 50, 320, 18, WHITE);
-        DrawText("ESC - Open pause menu", 50, 340, 18, WHITE);
-        DrawText("ENTER - Return to menu", 50, 360, 18, WHITE);
+        DrawText("BUCKET - Pick up and place water", 50, 300, 18, WHITE);
+        DrawText("1-9 - Select block type", 50, 320, 18, WHITE);
+        DrawText("E - Open inventory", 50, 340, 18, WHITE);
+        DrawText("ESC - Open pause menu", 50, 360, 18, WHITE);
+        DrawText("ENTER - Return to menu", 50, 380, 18, WHITE);
         
         DrawText("Click to start playing!", screenWidth/2 - 120, screenHeight - 50, 20, YELLOW);
     }

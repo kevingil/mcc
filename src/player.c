@@ -51,7 +51,7 @@ void InitPlayer(Player* player, Vector3 startPosition) {
     player->hotbar[2] = BLOCK_STONE;
     player->hotbar[3] = BLOCK_OAK_LOG;
     player->hotbar[4] = BLOCK_OAK_LEAVES;
-    player->hotbar[5] = BLOCK_WATER;
+    player->hotbar[5] = BLOCK_BUCKET;
     player->hotbar[6] = BLOCK_COBBLESTONE;
     player->hotbar[7] = BLOCK_SAND;
     player->hotbar[8] = BLOCK_BRICKS;
@@ -64,7 +64,10 @@ void InitPlayer(Player* player, Vector3 startPosition) {
     // Fill inventory with all available blocks
     int slotIndex = 0;
     for (int i = 1; i < BLOCK_COUNT && slotIndex < INVENTORY_SIZE; i++) {
-        player->inventory.blocks[slotIndex] = (BlockType)i;
+        BlockType filled = (BlockType)i;
+        if (IsWaterBlock(filled) && (filled != BLOCK_WATER)) continue;
+        if ((filled == BLOCK_BUCKET) || (filled == BLOCK_WATER_BUCKET)) continue;
+        player->inventory.blocks[slotIndex] = filled;
         player->inventory.quantities[slotIndex] = 64; // Full stack
         slotIndex++;
     }
@@ -76,6 +79,22 @@ void InitPlayer(Player* player, Vector3 startPosition) {
     }
     
     DisableCursor(); // Lock cursor for first-person view
+}
+
+void SetPlayerLook(Player* player, float yaw, float pitch) {
+    Vector3 forward = {0};
+    float limit = PI/2.0f - 0.1f;
+
+    if (pitch > limit) pitch = limit;
+    if (pitch < -limit) pitch = -limit;
+
+    player->yaw = yaw;
+    player->pitch = pitch;
+    player->camera.position = Vector3Add(player->position, (Vector3){0, PLAYER_HEIGHT * 0.9f, 0});
+    forward.x = cosf(pitch)*sinf(yaw);
+    forward.y = sinf(pitch);
+    forward.z = cosf(pitch)*cosf(yaw);
+    player->camera.target = Vector3Add(player->camera.position, forward);
 }
 
 void UpdatePlayer(Player* player, VoxelWorld* world) {
@@ -224,11 +243,26 @@ void HandlePlayerMouseLook(Player* player) {
     }
 }
 
+static bool PlayerInWater(Player* player, VoxelWorld* world) {
+    BlockPos feet = WorldToBlock(player->position);
+    BlockPos waist = feet;
+    waist.y += 1;
+    return IsWaterBlock(GetBlock(world, feet)) || IsWaterBlock(GetBlock(world, waist));
+}
+
 void UpdatePlayerPhysics(Player* player, VoxelWorld* world) {
     float deltaTime = GetFrameTime();
+
+    player->inWater = PlayerInWater(player, world);
     
     // Apply gravity
     ApplyGravity(player);
+
+    if (player->inWater) {
+        player->velocity.x *= 0.55f;
+        player->velocity.z *= 0.55f;
+        if (IsKeyDown(KEY_SPACE)) player->velocity.y = 4.5f;
+    }
     
     // Check collision and move player
     Vector3 newPosition = Vector3Add(player->position, Vector3Scale(player->velocity, deltaTime));
@@ -271,7 +305,12 @@ void UpdatePlayerPhysics(Player* player, VoxelWorld* world) {
 
 void ApplyGravity(Player* player) {
     float deltaTime = GetFrameTime();
-    player->velocity.y -= GRAVITY * deltaTime;
+    float gravity = player->inWater ? GRAVITY*0.12f : GRAVITY;
+    player->velocity.y -= gravity * deltaTime;
+
+    if (player->inWater && (player->velocity.y < -2.5f)) {
+        player->velocity.y = -2.5f;
+    }
     
     // Terminal velocity
     if (player->velocity.y < -50.0f) {
@@ -330,7 +369,49 @@ void UpdateBlockTarget(Player* player, VoxelWorld* world) {
     player->hasTarget = RaycastToBlock(rayOrigin, rayDirection, world, &player->targetBlock, &hitNormal);
 }
 
+static void UseBucket(Player* player, VoxelWorld* world) {
+    BlockType target = BLOCK_AIR;
+
+    if (!player->hasTarget) return;
+    target = GetBlock(world, player->targetBlock);
+    if (target != BLOCK_WATER) return;
+
+    SetBlock(world, player->targetBlock, BLOCK_AIR);
+    player->hotbar[player->hotbarSlot] = BLOCK_WATER_BUCKET;
+    player->selectedBlock = BLOCK_WATER_BUCKET;
+}
+
+static void PlaceWaterBucket(Player* player, VoxelWorld* world) {
+    Vector3 rayOrigin = player->camera.position;
+    Vector3 rayDirection = Vector3Normalize(Vector3Subtract(player->camera.target, player->camera.position));
+    BlockPos hitBlock = {0};
+    Vector3 hitNormal = {0};
+    BlockPos placePos = {0};
+    BlockType there = BLOCK_AIR;
+
+    if (!RaycastToBlock(rayOrigin, rayDirection, world, &hitBlock, &hitNormal)) return;
+
+    placePos.x = hitBlock.x + (int)hitNormal.x;
+    placePos.y = hitBlock.y + (int)hitNormal.y;
+    placePos.z = hitBlock.z + (int)hitNormal.z;
+    there = GetBlock(world, placePos);
+    if ((there != BLOCK_AIR) && !IsWaterBlock(there)) return;
+    if (there == BLOCK_WATER) return;
+
+    SetBlock(world, placePos, BLOCK_WATER);
+    player->hotbar[player->hotbarSlot] = BLOCK_BUCKET;
+    player->selectedBlock = BLOCK_BUCKET;
+}
+
 void HandleBlockPlacement(Player* player, VoxelWorld* world) {
+    if (player->selectedBlock == BLOCK_BUCKET) {
+        UseBucket(player, world);
+        return;
+    }
+    if (player->selectedBlock == BLOCK_WATER_BUCKET) {
+        PlaceWaterBucket(player, world);
+        return;
+    }
     if (!player->hasTarget || player->selectedBlock == BLOCK_AIR) return;
     
     Vector3 rayOrigin = player->camera.position;
@@ -369,6 +450,7 @@ void HandleBlockBreaking(Player* player, VoxelWorld* world) {
     if (!player->hasTarget) return;
     
     BlockType currentBlock = GetBlock(world, player->targetBlock);
+    if (IsWaterBlock(currentBlock)) return;
     if (currentBlock != BLOCK_AIR) {
         SetBlock(world, player->targetBlock, BLOCK_AIR);
     }
@@ -382,7 +464,7 @@ bool RaycastToBlock(Vector3 origin, Vector3 direction, VoxelWorld* world, BlockP
         BlockPos currentBlock = WorldToBlock(rayPos);
         BlockType block = GetBlock(world, currentBlock);
         
-        if (IsBlockSolid(block)) {
+        if (IsBlockSolid(block) || IsWaterBlock(block)) {
             *hitBlock = currentBlock;
             
             // Calculate hit normal (simplified)
@@ -649,6 +731,7 @@ int GetInventorySlotAtMouse(Vector2 mousePos) {
 }
 
 const char* GetBlockName(BlockType block) {
+    if (IsWaterBlock(block)) return "Water";
     switch (block) {
         case BLOCK_AIR: return "Air";
         case BLOCK_GRASS: return "Grass Block";
@@ -659,6 +742,8 @@ const char* GetBlockName(BlockType block) {
         case BLOCK_SAND: return "Sand";
         case BLOCK_GRAVEL: return "Gravel";
         case BLOCK_WATER: return "Water";
+        case BLOCK_BUCKET: return "Bucket";
+        case BLOCK_WATER_BUCKET: return "Water Bucket";
         case BLOCK_OAK_LOG: return "Oak Log";
         case BLOCK_OAK_PLANKS: return "Oak Planks";
         case BLOCK_OAK_LEAVES: return "Oak Leaves";
