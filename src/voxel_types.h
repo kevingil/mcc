@@ -217,6 +217,18 @@ typedef enum {
     BLOCK_CACTUS,
     BLOCK_SPONGE,
     BLOCK_WET_SPONGE,
+
+    // Flowing water. BLOCK_WATER stays the source block.
+    BLOCK_WATER_1,
+    BLOCK_WATER_2,
+    BLOCK_WATER_3,
+    BLOCK_WATER_4,
+    BLOCK_WATER_5,
+    BLOCK_WATER_6,
+    BLOCK_WATER_7,
+    BLOCK_WATER_FALL,
+    BLOCK_BUCKET,
+    BLOCK_WATER_BUCKET,
     
     BLOCK_COUNT
 } BlockType;
@@ -348,15 +360,47 @@ static inline float Distance2D(Vector3 a, Vector3 b)
 //----------------------------------------------------------------------------------
 // Block Properties
 //----------------------------------------------------------------------------------
+static inline bool IsWaterBlock(BlockType block)
+{
+    return (block == BLOCK_WATER) || ((block >= BLOCK_WATER_1) && (block <= BLOCK_WATER_FALL));
+}
+
+// 0 is a source, 1-7 flow outward, 8 is a full block falling down.
+static inline int WaterSpreadLevel(BlockType block)
+{
+    if (block == BLOCK_WATER) return 0;
+    if ((block >= BLOCK_WATER_1) && (block <= BLOCK_WATER_7)) return (int)(block - BLOCK_WATER_1) + 1;
+    if (block == BLOCK_WATER_FALL) return 8;
+    return -1;
+}
+
+static inline BlockType BlockFromWaterLevel(int level)
+{
+    if (level <= 0) return BLOCK_WATER;
+    if (level >= 8) return BLOCK_WATER_FALL;
+    return (BlockType)(BLOCK_WATER_1 + (level - 1));
+}
+
+static inline float WaterVisualHeight(BlockType block)
+{
+    int level = WaterSpreadLevel(block);
+
+    if (level < 0) return 1.0f;
+    if (level == 0) return 0.875f;
+    if (level == 8) return 1.0f;
+    return (8.0f - (float)level)/9.0f;
+}
+
 static inline bool IsBlockSolid(BlockType block)
 {
-    return (block != BLOCK_AIR && block != BLOCK_WATER);
+    if (IsWaterBlock(block)) return false;
+    return block != BLOCK_AIR;
 }
 
 static inline bool IsBlockTransparent(BlockType block)
 {
+    if (IsWaterBlock(block)) return true;
     return (block == BLOCK_AIR || 
-            block == BLOCK_WATER || 
             block == BLOCK_GLASS ||
             block == BLOCK_WHITE_STAINED_GLASS ||
             block == BLOCK_ORANGE_STAINED_GLASS ||
@@ -392,7 +436,17 @@ static inline Color GetBlockColor(BlockType block)
         case BLOCK_BEDROCK: return (Color){64, 64, 64, 255};
         case BLOCK_SAND: return BEIGE;
         case BLOCK_GRAVEL: return (Color){136, 136, 136, 255};
-        case BLOCK_WATER: return BLUE;
+        case BLOCK_WATER:
+        case BLOCK_WATER_1:
+        case BLOCK_WATER_2:
+        case BLOCK_WATER_3:
+        case BLOCK_WATER_4:
+        case BLOCK_WATER_5:
+        case BLOCK_WATER_6:
+        case BLOCK_WATER_7:
+        case BLOCK_WATER_FALL: return (Color){ 47, 94, 196, 160 };
+        case BLOCK_BUCKET: return (Color){ 160, 160, 160, 255 };
+        case BLOCK_WATER_BUCKET: return (Color){ 47, 140, 220, 255 };
         
         // Wood blocks
         case BLOCK_OAK_LOG: return (Color){139, 69, 19, 255};
