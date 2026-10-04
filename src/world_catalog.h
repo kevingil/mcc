@@ -27,7 +27,8 @@ int GetWorldCount(void);
 const WorldInfo *GetWorld(int index);
 
 // Returns the new world id, or -1 if the catalog is full or the name is empty.
-int CreateWorldRecord(const char *name, const char *version);
+// chooseSeed uses seed. Otherwise the world gets a new random seed.
+int CreateWorldRecord(const char *name, const char *version, unsigned int seed, bool chooseSeed);
 bool DeleteWorldRecord(int id);
 bool RenameWorldRecord(int id, const char *name);
 bool RecreateWorldRecord(int id);

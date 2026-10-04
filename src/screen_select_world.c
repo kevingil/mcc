@@ -23,6 +23,8 @@ static int mode = 0; // 0 browse, 1 create, 2 edit, 3 delete, 4 recreate
 static bool searchFocused = false;
 static char search[WORLD_NAME_LENGTH] = "";
 static char nameField[WORLD_NAME_LENGTH] = "";
+static char seedField[12] = "";
+static bool nameFocused = true;
 static int visible[MAX_WORLDS] = { 0 };
 static int visibleCount = 0;
 static Texture2D icons[MAX_WORLDS] = { 0 };
@@ -155,6 +157,83 @@ static void SuggestName(char *out, int outSize)
     }
 
     snprintf(out, outSize, "New World");
+}
+
+static bool SeedWouldOverflow(const char *text, int digit)
+{
+    unsigned long value = 0;
+
+    for (int i = 0; text[i] != '\0'; i++)
+    {
+        value = value*10ul + (unsigned long)(text[i] - '0');
+    }
+
+    value = value*10ul + (unsigned long)digit;
+    return value > 4294967295ul;
+}
+
+static void TypeDigits(char *text, int cap)
+{
+    if (IsKeyPressed(KEY_BACKSPACE) || IsKeyPressedRepeat(KEY_BACKSPACE))
+    {
+        int length = (int)strlen(text);
+        if (length > 0) text[length - 1] = '\0';
+    }
+
+    int ch = GetCharPressed();
+    while (ch > 0)
+    {
+        int length = (int)strlen(text);
+        if ((ch >= '0') && (ch <= '9') && (length < cap - 1) && !SeedWouldOverflow(text, ch - '0'))
+        {
+            text[length] = (char)ch;
+            text[length + 1] = '\0';
+        }
+        ch = GetCharPressed();
+    }
+}
+
+static bool ParseSeedField(const char *text, unsigned int *out)
+{
+    unsigned long value = 0;
+
+    if ((text == NULL) || (text[0] == '\0') || (out == NULL)) return false;
+
+    for (int i = 0; text[i] != '\0'; i++)
+    {
+        if ((text[i] < '0') || (text[i] > '9')) return false;
+        value = value*10ul + (unsigned long)(text[i] - '0');
+        if (value > 4294967295ul) return false;
+    }
+
+    *out = (unsigned int)value;
+    return true;
+}
+
+static int DialogTitleY(void)
+{
+    int scale = MenuScale();
+
+    if (mode == 1) return GetScreenHeight()/2 - 96*scale;
+    return GetScreenHeight()/2 - 48*scale;
+}
+
+static Rectangle DialogNameField(void)
+{
+    int scale = MenuScale();
+    int cx = GetScreenWidth()/2;
+    int y = DialogTitleY();
+
+    return (Rectangle){ (float)(cx - 154*scale), (float)(y + 30*scale), (float)(308*scale), (float)(20*scale) };
+}
+
+static Rectangle DialogSeedField(void)
+{
+    int scale = MenuScale();
+    int cx = GetScreenWidth()/2;
+    int y = DialogTitleY();
+
+    return (Rectangle){ (float)(cx - 154*scale), (float)(y + 80*scale), (float)(308*scale), (float)(20*scale) };
 }
 
 static void TypeInto(char *text, int cap)
@@ -304,6 +383,8 @@ static void UpdateBrowse(void)
     if (buttons[1].clicked)
     {
         SuggestName(nameField, sizeof(nameField));
+        seedField[0] = '\0';
+        nameFocused = true;
         mode = 1;
         searchFocused = false;
         PlaySound(fxCoin);
@@ -404,7 +485,7 @@ static void DrawBrowse(void)
             }
 
             snprintf(line2, sizeof(line2), "%s (%s)", world->name, world->createdText);
-            snprintf(line3, sizeof(line3), "%s Mode, Version: %s", world->mode, world->version);
+            snprintf(line3, sizeof(line3), "%s Mode, Seed: %u", world->mode, world->seed);
             DrawMenuText((int)(rowRect.x + 38*scale), (int)(y + (rowH - line*3)/2), fontSize, world->name, WHITE);
             DrawMenuText((int)(rowRect.x + 38*scale), (int)(y + (rowH - line*3)/2 + line), fontSize, line2, (Color){ 160, 160, 160, 255 });
             DrawMenuText((int)(rowRect.x + 38*scale), (int)(y + (rowH - line*3)/2 + line*2), fontSize, line3, (Color){ 160, 160, 160, 255 });
@@ -421,7 +502,7 @@ static void LayoutDialog(MenuButton *buttons, const char *confirmLabel, bool con
 {
     int scale = MenuScale();
     int cx = GetScreenWidth()/2;
-    int y = GetScreenHeight()/2 + 24*scale;
+    int y = GetScreenHeight()/2 + ((mode == 1) ? 32 : 24)*scale;
     int buttonH = 20*scale;
 
     buttons[0].bounds = (Rectangle){ (float)(cx - 154*scale), (float)y, (float)(150*scale), (float)buttonH };
@@ -441,7 +522,19 @@ static void UpdateDialog(void)
 
     if (naming)
     {
-        TypeInto(nameField, WORLD_NAME_LENGTH);
+        if (mode == 1)
+        {
+            if (IsKeyPressed(KEY_TAB)) nameFocused = !nameFocused;
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
+            {
+                Vector2 mouse = GetMousePosition();
+                if (CheckCollisionPointRec(mouse, DialogNameField())) nameFocused = true;
+                if (CheckCollisionPointRec(mouse, DialogSeedField())) nameFocused = false;
+            }
+            if (nameFocused) TypeInto(nameField, WORLD_NAME_LENGTH);
+            else TypeDigits(seedField, (int)sizeof(seedField));
+        }
+        else TypeInto(nameField, WORLD_NAME_LENGTH);
         canConfirm = nameField[0] != '\0';
     }
     else DrainChars();
@@ -462,8 +555,13 @@ static void UpdateDialog(void)
         if (mode == 1)
         {
             int id = 0;
+            unsigned int seed = 0;
+            bool chooseSeed = false;
+
             TrimField(nameField);
-            id = CreateWorldRecord(nameField, OPENCRAFT_VERSION);
+            TrimField(seedField);
+            chooseSeed = ParseSeedField(seedField, &seed);
+            id = CreateWorldRecord(nameField, OPENCRAFT_VERSION, seed, chooseSeed);
             if (id > 0)
             {
                 SetActiveWorldId(id);
@@ -506,7 +604,7 @@ static void DrawDialog(void)
     int scale = MenuScale();
     int cx = GetScreenWidth()/2;
     int fontSize = 8*scale;
-    int y = GetScreenHeight()/2 - 48*scale;
+    int y = DialogTitleY();
     bool naming = (mode == 1) || (mode == 2);
     bool canConfirm = !naming || (nameField[0] != '\0');
     const char *title = "Create New World";
@@ -523,9 +621,16 @@ static void DrawDialog(void)
 
     if (naming)
     {
-        Rectangle field = { (float)(cx - 154*scale), (float)(y + 28*scale), (float)(308*scale), (float)(20*scale) };
+        Rectangle field = DialogNameField();
         DrawMenuTextCentered(cx, y + 16*scale, fontSize, "World Name", (Color){ 160, 160, 160, 255 });
-        DrawMenuTextField(field, nameField, true, framesCounter);
+        DrawMenuTextField(field, nameField, (mode != 1) || nameFocused, framesCounter);
+        if (mode == 1)
+        {
+            Rectangle seedBox = DialogSeedField();
+            DrawMenuTextCentered(cx, y + 56*scale, fontSize, "Seed", (Color){ 160, 160, 160, 255 });
+            DrawMenuTextCentered(cx, y + 68*scale, fontSize, "Leave blank for a random seed.", (Color){ 160, 160, 160, 255 });
+            DrawMenuTextField(seedBox, seedField, !nameFocused, framesCounter);
+        }
     }
     else if (mode == 3)
     {
@@ -554,6 +659,8 @@ void InitSelectWorldScreen(void)
     searchFocused = false;
     search[0] = '\0';
     nameField[0] = '\0';
+    seedField[0] = '\0';
+    nameFocused = true;
     LoadWorldCatalog(OPENCRAFT_VERSION);
     RebuildIcons();
     RebuildFilter();

@@ -278,7 +278,7 @@ void LoadWorldCatalog(const char *version)
 
     SortWorlds();
 
-    if (worldCount == 0) CreateWorldRecord("New World", catalogVersion);
+    if (worldCount == 0) CreateWorldRecord("New World", catalogVersion, 0, false);
 }
 
 int GetWorldCount(void)
@@ -292,7 +292,7 @@ const WorldInfo *GetWorld(int index)
     return &worlds[index];
 }
 
-int CreateWorldRecord(const char *name, const char *version)
+int CreateWorldRecord(const char *name, const char *version, unsigned int seed, bool chooseSeed)
 {
     WorldInfo *world = NULL;
     int id = 0;
@@ -312,7 +312,8 @@ int CreateWorldRecord(const char *name, const char *version)
     CopyText(world->mode, sizeof(world->mode), "Survival");
     if ((version != NULL) && (version[0] != '\0')) CopyText(world->version, sizeof(world->version), version);
     else CopyText(world->version, sizeof(world->version), catalogVersion);
-    world->seed = MakeSeed(world->id);
+    if (chooseSeed) world->seed = seed;
+    else world->seed = MakeSeed(world->id);
     FillFolder(world);
 
     if (!WriteLevel(world, false)) return -1;
