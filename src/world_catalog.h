@@ -3,11 +3,10 @@
 
 #include <stdbool.h>
 
-// World records live in saves/world_<id>/level.txt.
-// The menu reads name, created time, mode, version, and seed.
-// Chunk edits, inventory, and player pose are not stored yet.
-// Those belong beside this file: player keys in level.txt, and
-// modified chunks under region/, so a checkpoint is a copy of the folder.
+// Each world folder is saves/world_<id>/.
+// level.dat is gzip NBT: name, seed, spawn, and the player.
+// region/r.<x>.<z>.mca holds edited chunks as zlib NBT.
+// level.txt is the menu index and stays in step with level.dat.
 
 #define MAX_WORLDS 32
 #define WORLD_NAME_LENGTH 32

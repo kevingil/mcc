@@ -23,6 +23,7 @@
 #include "world_generation.h"
 #include "player.h"
 #include "world_catalog.h"
+#include "world_save.h"
 #include <stdio.h>
 
 //----------------------------------------------------------------------------------
@@ -40,6 +41,8 @@ static int pauseMenuItemCount = 2;
 static VoxelWorld world;
 static Player player;
 static bool gameInitialized = false;
+static double nextWorldSave = 0.0;
+static bool savedWhilePaused = false;
 
 //----------------------------------------------------------------------------------
 // Local Functions Declaration
@@ -61,17 +64,23 @@ void InitGameplayScreen(void)
     pauseMenuSelection = 0;
     
     if (!gameInitialized) {
-        // Initialize voxel world
+        Vector3 startPosition = { 0.0f, 0.0f, 0.0f };
+
+        WorldSaveBind(GetActiveWorldFolder());
         InitVoxelWorld(&world);
-        
-        // Initialize player at ground level instead of mid-air
-        float surfaceY = GetSurfaceLevel(0, 0); // Get surface at spawn point (0,0)
-        Vector3 startPosition = {0, surfaceY, 0}; // Start at ground level
+
+        startPosition = (Vector3){ 0.0f, GetSurfaceLevel(0, 0), 0.0f };
+        if (WorldSaveHasPlayer()) startPosition = WorldSavePlayerPosition();
+        else WorldSaveSetSpawn(0, (int)startPosition.y, 0);
+
         InitPlayer(&player, startPosition);
-        
+        WorldSaveApplyPlayer(&player);
+
         // Load initial chunks near spawn BEFORE player physics start
         // otherwise player will fall through the world forever
-        LoadChunksAroundPlayer(&world, startPosition);
+        LoadChunksAroundPlayer(&world, player.position);
+        nextWorldSave = GetTime() + 20.0;
+        savedWhilePaused = false;
         
         // Initialize renderer
         InitVoxelRenderer();
@@ -108,6 +117,12 @@ void UpdateGameplayScreen(void)
     
     if (gamePaused)
     {
+        if (!savedWhilePaused)
+        {
+            WorldSaveFlush(&player, &world);
+            savedWhilePaused = true;
+        }
+
         // Handle pause menu input
         if (IsKeyPressed(KEY_UP) && pauseMenuSelection > 0)
         {
@@ -139,6 +154,13 @@ void UpdateGameplayScreen(void)
     }
     else
     {
+        savedWhilePaused = false;
+        if (GetTime() >= nextWorldSave)
+        {
+            WorldSaveFlush(&player, &world);
+            nextWorldSave = GetTime() + 20.0;
+        }
+
         // Normal gameplay updates when not paused
         // Update world (chunk loading/unloading)
         UpdateVoxelWorld(&world, player.position);
@@ -340,6 +362,7 @@ void UnloadGameplayScreen(void)
     EnableCursor();
 
     if (gameInitialized) {
+        WorldSaveFlush(&player, &world);
         UnloadVoxelWorld(&world);
         UnloadVoxelRenderer();
         gameInitialized = false;

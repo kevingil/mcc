@@ -11,6 +11,7 @@
 #include "raylib.h"
 #include "screens.h"    // NOTE: Declares global (extern) variables and screens functions
 #include "menu_ui.h"
+#include "client_log.h"
 #include <stdio.h>
 
 #if defined(PLATFORM_WEB)
@@ -63,6 +64,9 @@ int main(void)
 {
     // Initialization
     //---------------------------------------------------------
+    ClientLogInit("logs");
+    ClientLog("OpenCraft started");
+
     InitWindow(screenWidth, screenHeight, "OpenCraft");
 
     InitAudioDevice();      // Initialize audio device
@@ -120,6 +124,7 @@ int main(void)
     CloseAudioDevice();     // Close audio context
 
     CloseWindow();          // Close window and OpenGL context
+    ClientLogClose();
     //--------------------------------------------------------------------------------------
 
     return 0;

@@ -1,4 +1,6 @@
 #include "world_catalog.h"
+#include "anvil.h"
+#include "level_data.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -153,10 +155,12 @@ static void FillFolder(WorldInfo *world)
     snprintf(world->folder, sizeof(world->folder), "saves/world_%d", world->id);
 }
 
-static bool WriteLevel(const WorldInfo *world)
+static bool WriteLevel(const WorldInfo *world, bool resetPlayer)
 {
     char path[96] = { 0 };
     FILE *file = NULL;
+    LevelData level;
+    bool textOk = false;
 
     MakeDir("saves");
     MakeDir(world->folder);
@@ -172,7 +176,13 @@ static bool WriteLevel(const WorldInfo *world)
     fprintf(file, "version=%s\n", world->version);
     fprintf(file, "seed=%u\n", world->seed);
     fclose(file);
-    return true;
+    textOk = true;
+
+    if (resetPlayer) AnvilRemoveRegions(world->folder);
+    if (resetPlayer || !LevelDataRead(world->folder, &level)) LevelDataInit(&level);
+    if (resetPlayer) LevelDataClearPlayer(&level);
+    LevelDataSetMeta(&level, world->name, world->mode, world->version, world->seed, (int64_t)world->createdUnix);
+    return textOk && LevelDataWrite(world->folder, &level);
 }
 
 static bool ReadLevel(const char *folder, int folderId, WorldInfo *world)
@@ -253,7 +263,17 @@ void LoadWorldCatalog(const char *version)
         char folder[64] = { 0 };
 
         snprintf(folder, sizeof(folder), "saves/world_%d", id);
-        if (ReadLevel(folder, id, &worlds[worldCount])) worldCount++;
+        if (ReadLevel(folder, id, &worlds[worldCount]))
+        {
+            char datPath[96] = { 0 };
+            FILE *dat = NULL;
+
+            snprintf(datPath, sizeof(datPath), "%s/level.dat", worlds[worldCount].folder);
+            dat = fopen(datPath, "rb");
+            if (dat == NULL) WriteLevel(&worlds[worldCount], false);
+            else fclose(dat);
+            worldCount++;
+        }
     }
 
     SortWorlds();
@@ -295,7 +315,7 @@ int CreateWorldRecord(const char *name, const char *version)
     world->seed = MakeSeed(world->id);
     FillFolder(world);
 
-    if (!WriteLevel(world)) return -1;
+    if (!WriteLevel(world, false)) return -1;
 
     worldCount++;
     SortWorlds();
@@ -311,6 +331,9 @@ bool DeleteWorldRecord(int id)
 
     snprintf(path, sizeof(path), "%s/level.txt", worlds[index].folder);
     remove(path);
+    snprintf(path, sizeof(path), "%s/level.dat", worlds[index].folder);
+    remove(path);
+    AnvilRemoveRegions(worlds[index].folder);
     RemoveDir(worlds[index].folder);
 
     for (int i = index; i < worldCount - 1; i++) worlds[i] = worlds[i + 1];
@@ -337,7 +360,7 @@ bool RenameWorldRecord(int id, const char *name)
     CopyName(worlds[index].name, sizeof(worlds[index].name), name);
     if (worlds[index].name[0] == '\0') return false;
     if (activeId == id) CopyText(activeName, sizeof(activeName), name);
-    return WriteLevel(&worlds[index]);
+    return WriteLevel(&worlds[index], false);
 }
 
 bool RecreateWorldRecord(int id)
@@ -350,7 +373,7 @@ bool RecreateWorldRecord(int id)
     FormatCreated(worlds[index].createdUnix, worlds[index].createdText, sizeof(worlds[index].createdText));
     worlds[index].seed = MakeSeed(worlds[index].id + (int)worlds[index].createdUnix);
     if (activeId == id) activeSeed = worlds[index].seed;
-    return WriteLevel(&worlds[index]);
+    return WriteLevel(&worlds[index], true);
 }
 
 void SetActiveWorldId(int id)
