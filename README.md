@@ -1,6 +1,6 @@
 
 
-## MC.C
+## OpenCraft
 
 ![Voxel World](screenshots/image.png "Voxel World")
 
@@ -18,6 +18,16 @@ An open-world voxel game built with raylib, featuring open world gameplay with i
  - **Realistic physics** - gravity, collision detection, and jumping
  - **Optimized rendering** - face culling, frustum culling, and efficient mesh generation
  - **Procedural terrain** - hills, valleys, water bodies, and tree generation
+
+### Menu
+
+The game opens on the OpenCraft title screen.
+
+- **Singleplayer** opens the world list. Play a world, create one, edit the name, re-create it, or delete it.
+- **Multiplayer** and **Realms** are listed and marked coming soon.
+- **Options...** and **Quit Game** do what they say.
+
+World records are stored in `saves/world_<id>/level.txt`.
 
 ### Controls
 

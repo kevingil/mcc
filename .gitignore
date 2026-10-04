@@ -1,4 +1,5 @@
 build/*
+saves/
 .DS_Store
 .vscode/
 .idea/
