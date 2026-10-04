@@ -9,12 +9,14 @@
 // Local Variables
 //----------------------------------------------------------------------------------
 static bool isInitialized = false;
+static unsigned int worldSeed = 0;
 
-// Simple noise hash function
+// Simple noise hash function. worldSeed changes hills, water, and trees.
 static int hash2D(int x, int y) {
-    int h = x * 374761393 + y * 668265263;
-    h = (h ^ (h >> 13)) * 1274126177;
-    return h ^ (h >> 16);
+    unsigned int h = (unsigned int)x*374761393u + (unsigned int)y*668265263u;
+    h ^= worldSeed*2246822519u;
+    h = (h ^ (h >> 13))*1274126177u;
+    return (int)(h ^ (h >> 16));
 }
 
 //----------------------------------------------------------------------------------
@@ -58,6 +60,10 @@ void InitWorldGeneration(void) {
     isInitialized = true;
 }
 
+void SetWorldGenerationSeed(unsigned int seed) {
+    worldSeed = seed;
+}
+
 float GetTerrainHeight(int x, int z) {
     // Generate height using multiple octaves of noise
     float height = 0.0f;
@@ -95,11 +101,13 @@ float GetSurfaceLevel(int x, int z) {
 bool ShouldPlaceTree(int x, int z) {
     // Use noise to determine tree placement
     float treeNoise = PerlinNoise2D(x * 0.1f, z * 0.1f);
-    return (treeNoise > 0.7f && (hash2D(x, z) % 100) < (TREE_FREQUENCY * 100));
+    return (treeNoise > 0.7f) && (((unsigned int)hash2D(x, z)%100u) < (unsigned int)(TREE_FREQUENCY*100.0f));
 }
 
 void PlaceTree(Chunk* chunk, int x, int y, int z) {
-    int treeHeight = 4 + (rand() % 3); // Random height between 4-6
+    int worldX = chunk->position.x*CHUNK_SIZE + x;
+    int worldZ = chunk->position.z*CHUNK_SIZE + z;
+    int treeHeight = 4 + (int)((unsigned int)hash2D(worldX, worldZ)%3u);
     
     // Place trunk
     for (int i = 0; i < treeHeight; i++) {

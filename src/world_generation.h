@@ -11,6 +11,7 @@ extern "C" {
 // World Generation Functions
 //----------------------------------------------------------------------------------
 void InitWorldGeneration(void);
+void SetWorldGenerationSeed(unsigned int seed);
 void GenerateChunk(Chunk* chunk);
 float GetTerrainHeight(int x, int z);
 float GetSurfaceLevel(int x, int z);
