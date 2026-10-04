@@ -48,7 +48,8 @@ PROJECT_SOURCE_FILES  ?= \
     anvil.c \
     level_data.c \
     client_log.c \
-    world_save.c
+    world_save.c \
+    water.c
 
 # raylib library variables
 RAYLIB_SRC_PATH       ?= ../../raylib/src

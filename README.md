@@ -31,6 +31,8 @@ Worlds live in `saves/world_<id>/`. `level.dat` is gzip NBT for the name, seed, 
 
 A new world gets a random seed. The create screen accepts a seed too; leave it blank to keep the random one. Hills, water, and trees are rebuilt from that seed. Blocks you place stay in the region file.
 
+Water is a source block. It spreads seven steps, falls down holes, and becomes a new source where two sources meet on solid ground. Lakes and oceans fill the low ground with sand beds. A new world starts on a shore. The bucket on the hotbar picks up a source and places it again. Space swims while you are in the water.
+
 ### Controls
 
 Keyboard:
