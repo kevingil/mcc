@@ -241,6 +241,7 @@ typedef struct {
     bool needsRegen;
     bool isLoaded;
     bool isVisible;
+    bool modified;
     
     // Rendering data
     Mesh mesh;                      // Opaque blocks mesh
