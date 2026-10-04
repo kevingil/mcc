@@ -52,7 +52,8 @@ else()
 endif()
 
 #set(raylib_VERBOSE 1)
-target_link_libraries(${PROJECT_NAME} raylib)
+find_package(ZLIB REQUIRED)
+target_link_libraries(${PROJECT_NAME} raylib ZLIB::ZLIB)
 
 # Web Configurations
 if ("${PLATFORM}" STREQUAL "Web")
