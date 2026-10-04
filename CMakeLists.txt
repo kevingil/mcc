@@ -55,6 +55,17 @@ endif()
 find_package(ZLIB REQUIRED)
 target_link_libraries(${PROJECT_NAME} raylib ZLIB::ZLIB)
 
+add_executable(save_format_test
+    tests/save_format_test.c
+    src/nbt.c
+    src/chunk_codec.c
+    src/anvil.c
+    src/level_data.c
+    src/client_log.c
+)
+target_include_directories(save_format_test PRIVATE src)
+target_link_libraries(save_format_test ZLIB::ZLIB)
+
 # Web Configurations
 if ("${PLATFORM}" STREQUAL "Web")
     # Tell Emscripten to build an example.html file.
