@@ -2,7 +2,7 @@
 
 ## OpenCraft
 
-![Voxel World](screenshots/image.png "Voxel World")
+![OpenCraft title](screenshots/menu_title.png "OpenCraft title")
 
 ### Description
 
@@ -21,6 +21,8 @@ An open-world voxel game built with raylib, featuring open world gameplay with i
 
 ### Menu
 
+![Select World](screenshots/menu_worlds.png "Select World")
+
 The game opens on the OpenCraft title screen.
 
 - **Singleplayer** opens the world list. Play a world, create one, edit the name, re-create it, or delete it.
@@ -33,6 +35,14 @@ A new world gets a random seed. The create screen accepts a seed too; leave it b
 
 Water is a source block. It spreads seven steps, falls down holes, and becomes a new source where two sources meet on solid ground. Lakes and oceans fill the low ground with sand beds. A new world starts on a shore. The bucket on the hotbar picks up a source and places it again. Space swims while you are in the water.
 
+### In game
+
+![Gameplay](screenshots/gameplay.png "Gameplay")
+
+The hotbar, crosshair, and world readout stay on screen while you move. Escape opens the pause menu.
+
+![Pause menu](screenshots/pause_menu.png "Pause menu")
+
 ### Controls
 
 Keyboard:
@@ -40,7 +50,7 @@ Keyboard:
  - **SPACE** - Jump
  - **SHIFT** - Run/Sprint
  - **1-9** - Select block type from hotbar
- - **ESC** - Toggle cursor lock/unlock
+ - **ESC** - Pause the game
  - **ENTER** - Return to main menu
 
 Mouse:
