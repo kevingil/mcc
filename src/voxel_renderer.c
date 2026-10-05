@@ -280,7 +280,7 @@ void GenerateChunkMesh(Chunk* chunk, VoxelWorld* world) {
                         chunk->position.z * CHUNK_SIZE + z + (int)faceOffsets[face].z
                     };
                     
-                    if (ShouldRenderFace(world, neighborPos, face)) {
+                    if (ShouldRenderFace(world, neighborPos, face, block)) {
                         AddFaceToMesh(blockPos, face, block, vertices, texCoords, vertexIndex);
                         
                         // Add indices for two triangles (fixed winding order)
@@ -378,7 +378,9 @@ void AddFaceToMesh(Vector3 position, int faceIndex, BlockType block,
     
     // Add vertices for this face
     for (int i = 0; i < 4; i++) {
-        Vector3 vertex = Vector3Add(position, faceVertices[faceIndex][i]);
+        Vector3 vertex = faceVertices[faceIndex][i];
+        if (IsWaterBlock(block)) vertex.y *= WaterVisualHeight(block);
+        vertex = Vector3Add(position, vertex);
         
         // Vertex position
         vertices[(*vertexIndex) * 3 + 0] = vertex.x;
@@ -395,8 +397,17 @@ void AddFaceToMesh(Vector3 position, int faceIndex, BlockType block,
     }
 }
 
-bool ShouldRenderFace(VoxelWorld* world, BlockPos position, int faceIndex) {
+bool ShouldRenderFace(VoxelWorld* world, BlockPos position, int faceIndex, BlockType current) {
     BlockType neighborBlock = GetBlock(world, position);
+
+    if (IsWaterBlock(current)) {
+        if (IsWaterBlock(neighborBlock)) {
+            if ((faceIndex == FACE_TOP) || (faceIndex == FACE_BOTTOM)) return false;
+            return WaterVisualHeight(current) > WaterVisualHeight(neighborBlock) + 0.01f;
+        }
+        if (IsBlockSolid(neighborBlock)) return false;
+        return true;
+    }
     
     // Render face if neighbor is air or transparent
     return IsBlockTransparent(neighborBlock);
@@ -472,7 +483,8 @@ void LoadBlockTextures(void) {
         "iron_block", "gold_block", "diamond_block",
         "white_wool", "orange_wool", "blue_wool", "red_wool",
         "glass", "bricks", "bookshelf", "glowstone", "obsidian",
-        "netherrack", "end_stone", "quartz_block", "packed_ice"
+        "netherrack", "end_stone", "quartz_block", "packed_ice",
+        "water_still", "water_flow", "bucket", "water_bucket"
     };
     
     int textureCount = sizeof(textureNames) / sizeof(textureNames[0]);
@@ -495,10 +507,12 @@ void LoadBlockTextures(void) {
             "src/resources/textures/block/%s.png",
             "resources/textures/block/%s.png", 
             "./src/resources/textures/block/%s.png",
-            "./resources/textures/block/%s.png"
+            "./resources/textures/block/%s.png",
+            "resources/textures/item/%s.png",
+            "./resources/textures/item/%s.png"
         };
         
-        for (int pathIdx = 0; pathIdx < 4; pathIdx++) {
+        for (int pathIdx = 0; pathIdx < 6; pathIdx++) {
             snprintf(filePath, sizeof(filePath), possiblePaths[pathIdx], textureNames[i]);
             
             if (FileExists(filePath)) {
@@ -510,6 +524,10 @@ void LoadBlockTextures(void) {
                     // Ensure image format supports alpha channel
                     if (blockTexture.format != PIXELFORMAT_UNCOMPRESSED_R8G8B8A8) {
                         ImageFormat(&blockTexture, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+                    }
+                    // Animated strips keep the first frame.
+                    if ((blockTexture.width > 0) && (blockTexture.height > blockTexture.width*2)) {
+                        ImageCrop(&blockTexture, (Rectangle){ 0, 0, (float)blockTexture.width, (float)blockTexture.width });
                     }
                     break;
                 }
@@ -641,6 +659,16 @@ void GetBlockTextureUV(BlockType block, int faceIndex, float* u, float* v, float
         case BLOCK_SAND: textureName = "sand"; break;
         case BLOCK_GRAVEL: textureName = "gravel"; break;
         case BLOCK_WATER: textureName = "water_still"; break;
+        case BLOCK_WATER_FALL:
+        case BLOCK_WATER_1:
+        case BLOCK_WATER_2:
+        case BLOCK_WATER_3:
+        case BLOCK_WATER_4:
+        case BLOCK_WATER_5:
+        case BLOCK_WATER_6:
+        case BLOCK_WATER_7: textureName = "water_flow"; break;
+        case BLOCK_BUCKET: textureName = "bucket"; break;
+        case BLOCK_WATER_BUCKET: textureName = "water_bucket"; break;
         
         // Wood blocks
         case BLOCK_OAK_LOG:
@@ -794,6 +822,7 @@ void GetBlockTextureUV(BlockType block, int faceIndex, float* u, float* v, float
 }
 
 bool BlockNeedsAlphaBlending(BlockType block) {
+    if (IsWaterBlock(block)) return true;
     switch (block) {
         case BLOCK_GLASS:
         case BLOCK_WHITE_STAINED_GLASS:
@@ -817,7 +846,6 @@ bool BlockNeedsAlphaBlending(BlockType block) {
         case BLOCK_ACACIA_LEAVES:
         case BLOCK_DARK_OAK_LEAVES:
         case BLOCK_ICE:
-        case BLOCK_WATER:
             return true;
         default:
             return false;
@@ -838,6 +866,16 @@ const char* GetBlockTextureName(BlockType block, int faceIndex) {
         case BLOCK_SAND: return "sand";
         case BLOCK_GRAVEL: return "gravel";
         case BLOCK_WATER: return "water_still";
+        case BLOCK_WATER_FALL:
+        case BLOCK_WATER_1:
+        case BLOCK_WATER_2:
+        case BLOCK_WATER_3:
+        case BLOCK_WATER_4:
+        case BLOCK_WATER_5:
+        case BLOCK_WATER_6:
+        case BLOCK_WATER_7: return "water_flow";
+        case BLOCK_BUCKET: return "bucket";
+        case BLOCK_WATER_BUCKET: return "water_bucket";
         
         // Wood blocks
         case BLOCK_OAK_LOG:

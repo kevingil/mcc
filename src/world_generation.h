@@ -11,9 +11,11 @@ extern "C" {
 // World Generation Functions
 //----------------------------------------------------------------------------------
 void InitWorldGeneration(void);
+void SetWorldGenerationSeed(unsigned int seed);
 void GenerateChunk(Chunk* chunk);
 float GetTerrainHeight(int x, int z);
 float GetSurfaceLevel(int x, int z);
+bool FindShoreSpawn(Vector3 *position, float *yaw);
 bool ShouldPlaceTree(int x, int z);
 void PlaceTree(Chunk* chunk, int x, int y, int z);
 

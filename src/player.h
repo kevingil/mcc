@@ -12,6 +12,7 @@ extern "C" {
 // Player Functions
 //----------------------------------------------------------------------------------
 void InitPlayer(Player* player, Vector3 startPosition);
+void SetPlayerLook(Player* player, float yaw, float pitch);
 void UpdatePlayer(Player* player, VoxelWorld* world);
 void HandlePlayerInput(Player* player);
 void UpdatePlayerPhysics(Player* player, VoxelWorld* world);

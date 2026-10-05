@@ -1,6 +1,6 @@
 
 
-## MC.C
+## OpenCraft
 
 ![Voxel World](screenshots/image.png "Voxel World")
 
@@ -18,6 +18,20 @@ An open-world voxel game built with raylib, featuring open world gameplay with i
  - **Realistic physics** - gravity, collision detection, and jumping
  - **Optimized rendering** - face culling, frustum culling, and efficient mesh generation
  - **Procedural terrain** - hills, valleys, water bodies, and tree generation
+
+### Menu
+
+The game opens on the OpenCraft title screen.
+
+- **Singleplayer** opens the world list. Play a world, create one, edit the name, re-create it, or delete it.
+- **Multiplayer** and **Realms** are listed and marked coming soon.
+- **Options...** and **Quit Game** do what they say.
+
+Worlds live in `saves/world_<id>/`. `level.dat` is gzip NBT for the name, seed, spawn, and player. Edited chunks are zlib NBT in `region/r.<x>.<z>.mca`. `level.txt` is the menu index. Client output goes to `logs/latest.log`, and the next launch gzips that file to `logs/YYYY-MM-DD-N.log.gz`.
+
+A new world gets a random seed. The create screen accepts a seed too; leave it blank to keep the random one. Hills, water, and trees are rebuilt from that seed. Blocks you place stay in the region file.
+
+Water is a source block. It spreads seven steps, falls down holes, and becomes a new source where two sources meet on solid ground. Lakes and oceans fill the low ground with sand beds. A new world starts on a shore. The bucket on the hotbar picks up a source and places it again. Space swims while you are in the water.
 
 ### Controls
 

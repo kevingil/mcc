@@ -9,12 +9,14 @@
 // Local Variables
 //----------------------------------------------------------------------------------
 static bool isInitialized = false;
+static unsigned int worldSeed = 0;
 
-// Simple noise hash function
+// Simple noise hash function. worldSeed changes hills, water, and trees.
 static int hash2D(int x, int y) {
-    int h = x * 374761393 + y * 668265263;
-    h = (h ^ (h >> 13)) * 1274126177;
-    return h ^ (h >> 16);
+    unsigned int h = (unsigned int)x*374761393u + (unsigned int)y*668265263u;
+    h ^= worldSeed*2246822519u;
+    h = (h ^ (h >> 13))*1274126177u;
+    return (int)(h ^ (h >> 16));
 }
 
 //----------------------------------------------------------------------------------
@@ -58,6 +60,10 @@ void InitWorldGeneration(void) {
     isInitialized = true;
 }
 
+void SetWorldGenerationSeed(unsigned int seed) {
+    worldSeed = seed;
+}
+
 float GetTerrainHeight(int x, int z) {
     // Generate height using multiple octaves of noise
     float height = 0.0f;
@@ -71,6 +77,10 @@ float GetTerrainHeight(int x, int z) {
         frequency *= 2.0f;
     }
     
+    // Low continent noise opens lakes and oceans. High ground stays dry.
+    float continent = SimplexNoise2D(x*0.0025f, z*0.0025f);
+    if (continent < 0.05f) height -= (0.05f - continent)*48.0f;
+
     return WATER_LEVEL + height;
 }
 
@@ -92,14 +102,58 @@ float GetSurfaceLevel(int x, int z) {
     }
 }
 
+bool FindShoreSpawn(Vector3 *position, float *yaw) {
+    int bestDist = 1000000;
+    int bestX = 0;
+    int bestZ = 0;
+    int faceX = 0;
+    int faceZ = 1;
+    bool found = false;
+
+    if ((position == NULL) || (yaw == NULL)) return false;
+
+    for (int radius = 1; radius <= 80; radius++) {
+        for (int x = -radius; x <= radius; x++) {
+            for (int z = -radius; z <= radius; z++) {
+                int dist = x*x + z*z;
+                if ((abs(x) != radius) && (abs(z) != radius)) continue;
+                if ((dist >= bestDist) || ((int)GetTerrainHeight(x, z) <= WATER_LEVEL)) continue;
+
+                for (int dir = 0; dir < 4; dir++) {
+                    int nx = x + ((dir == 0) ? 1 : (dir == 1) ? -1 : 0);
+                    int nz = z + ((dir == 2) ? 1 : (dir == 3) ? -1 : 0);
+                    if ((int)GetTerrainHeight(nx, nz) < WATER_LEVEL) {
+                        bestDist = dist;
+                        bestX = x;
+                        bestZ = z;
+                        faceX = nx - x;
+                        faceZ = nz - z;
+                        found = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (found) break;
+    }
+
+    if (!found) return false;
+
+    *position = (Vector3){ bestX + 0.5f, GetSurfaceLevel(bestX, bestZ), bestZ + 0.5f };
+    *yaw = atan2f((float)faceX, (float)faceZ);
+    return true;
+}
+
 bool ShouldPlaceTree(int x, int z) {
     // Use noise to determine tree placement
     float treeNoise = PerlinNoise2D(x * 0.1f, z * 0.1f);
-    return (treeNoise > 0.7f && (hash2D(x, z) % 100) < (TREE_FREQUENCY * 100));
+    return (treeNoise > 0.7f) && (((unsigned int)hash2D(x, z)%100u) < (unsigned int)(TREE_FREQUENCY*100.0f));
 }
 
 void PlaceTree(Chunk* chunk, int x, int y, int z) {
-    int treeHeight = 4 + (rand() % 3); // Random height between 4-6
+    int worldX = chunk->position.x*CHUNK_SIZE + x;
+    int worldZ = chunk->position.z*CHUNK_SIZE + z;
+    int treeHeight = 4 + (int)((unsigned int)hash2D(worldX, worldZ)%3u);
     
     // Place trunk
     for (int i = 0; i < treeHeight; i++) {
@@ -158,15 +212,12 @@ void GenerateChunk(Chunk* chunk) {
                     // Stone layer
                     chunk->blocks[x][y][z] = BLOCK_STONE;
                 } else if (y < height) {
-                    // Dirt layer
-                    chunk->blocks[x][y][z] = BLOCK_DIRT;
+                    if (height <= WATER_LEVEL + 2) chunk->blocks[x][y][z] = BLOCK_SAND;
+                    else chunk->blocks[x][y][z] = BLOCK_DIRT;
                 } else {
-                    // Top layer - grass or dirt based on height
-                    if (height > WATER_LEVEL) {
-                        chunk->blocks[x][y][z] = BLOCK_GRASS;
-                    } else {
-                        chunk->blocks[x][y][z] = BLOCK_DIRT;
-                    }
+                    // Beaches and lake beds are sand. Inland tops are grass.
+                    if (height <= WATER_LEVEL + 2) chunk->blocks[x][y][z] = BLOCK_SAND;
+                    else chunk->blocks[x][y][z] = BLOCK_GRASS;
                 }
             }
             

@@ -37,8 +37,19 @@ PROJECT_SOURCE_FILES  ?= \
     screen_logo.c \
     screen_title.c \
     screen_options.c \
+    screen_select_world.c \
+    screen_multiplayer.c \
     screen_gameplay.c \
-    screen_ending.c
+    screen_ending.c \
+    menu_ui.c \
+    world_catalog.c \
+    nbt.c \
+    chunk_codec.c \
+    anvil.c \
+    level_data.c \
+    client_log.c \
+    world_save.c \
+    water.c
 
 # raylib library variables
 RAYLIB_SRC_PATH       ?= ../../raylib/src
@@ -305,7 +316,7 @@ ifeq ($(PLATFORM),PLATFORM_DESKTOP)
     ifeq ($(PLATFORM_OS),LINUX)
         # Libraries for Debian GNU/Linux desktop compiling
         # NOTE: Required packages: libegl1-mesa-dev
-        LDLIBS = -lraylib -lGL -lm -lpthread -ldl -lrt
+        LDLIBS = -lraylib -lGL -lm -lpthread -ldl -lrt -lz
 
         # On Wayland windowing system, additional libraries requires
         ifeq ($(USE_WAYLAND_DISPLAY),TRUE)

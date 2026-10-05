@@ -1,5 +1,7 @@
 #include "voxel_world.h"
 #include "world_generation.h"
+#include "world_save.h"
+#include "water.h"
 #include "raymath.h"
 #include <string.h>
 #include <stdlib.h>
@@ -17,6 +19,7 @@ void InitVoxelWorld(VoxelWorld* world) {
         world->chunks[i].hasMesh = false;
         world->chunks[i].needsRegen = false;
         world->chunks[i].isVisible = false;
+        world->chunks[i].modified = false;
         world->chunks[i].position = (ChunkPos){0, 0};
         world->chunks[i].vertexCount = 0;
         world->chunks[i].triangleCount = 0;
@@ -30,6 +33,7 @@ void InitVoxelWorld(VoxelWorld* world) {
 
 void UpdateVoxelWorld(VoxelWorld* world, Vector3 playerPosition) {
     world->playerPosition = playerPosition;
+    UpdateWater(world);
     
     // Load chunks around player
     LoadChunksAroundPlayer(world, playerPosition);
@@ -89,10 +93,14 @@ Chunk* LoadChunk(VoxelWorld* world, ChunkPos position) {
             chunk->triangleCount = 0;
             chunk->transparentVertexCount = 0;
             chunk->transparentTriangleCount = 0;
-            
-            // Generate chunk terrain
-            GenerateChunk(chunk);
-            
+            chunk->modified = false;
+
+            if (!WorldSaveLoadChunk(chunk)) GenerateChunk(chunk);
+            WaterWakeChunk(world, chunk);
+            chunk->modified = false;
+            chunk->needsRegen = true;
+            chunk->isLoaded = true;
+
             world->chunkCount++;
             return chunk;
         }
@@ -106,6 +114,8 @@ void UnloadChunk(VoxelWorld* world, int index) {
     
     Chunk* chunk = &world->chunks[index];
     if (!chunk->isLoaded) return;
+
+    if (chunk->modified) WorldSaveStoreChunk(chunk);
     
     // Unload mesh and material if they exist
     if (chunk->hasMesh) {
@@ -123,6 +133,7 @@ void UnloadChunk(VoxelWorld* world, int index) {
     }
     
     chunk->isLoaded = false;
+    chunk->modified = false;
     chunk->needsRegen = false;
     chunk->isVisible = false;
     chunk->vertexCount = 0;
@@ -205,7 +216,9 @@ void SetBlock(VoxelWorld* world, BlockPos position, BlockType block) {
     
     // Set the block
     chunk->blocks[localX][position.y][localZ] = block;
+    chunk->modified = true;
     chunk->needsRegen = true;
+    WaterNotify(world, position);
     
     // Mark neighboring chunks for regeneration if block is on edge
     if (localX == 0) {

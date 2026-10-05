@@ -10,6 +10,8 @@
 
 #include "raylib.h"
 #include "screens.h"    // NOTE: Declares global (extern) variables and screens functions
+#include "menu_ui.h"
+#include "client_log.h"
 #include <stdio.h>
 
 #if defined(PLATFORM_WEB)
@@ -39,6 +41,11 @@ static int transFromScreen = -1;
 static GameScreen transToScreen = UNKNOWN;
 static bool shouldExitGame = false;
 
+void RequestGameExit(void)
+{
+    shouldExitGame = true;
+}
+
 //----------------------------------------------------------------------------------
 // Local Functions Declaration
 //----------------------------------------------------------------------------------
@@ -57,7 +64,10 @@ int main(void)
 {
     // Initialization
     //---------------------------------------------------------
-    InitWindow(screenWidth, screenHeight, "MC.C");
+    ClientLogInit("logs");
+    ClientLog("OpenCraft started");
+
+    InitWindow(screenWidth, screenHeight, "OpenCraft");
 
     InitAudioDevice();      // Initialize audio device
 
@@ -65,6 +75,7 @@ int main(void)
     font = LoadFont("resources/mecha.png");
     //music = LoadMusicStream("resources/ambient.ogg"); // TODO: Load music
     fxCoin = LoadSound("resources/coin.wav");
+    InitMenuUi();
 
     SetMusicVolume(music, 1.0f);
     PlayMusicStream(music);
@@ -99,10 +110,13 @@ int main(void)
         case OPTIONS: UnloadOptionsScreen(); break;
         case GAMEPLAY: UnloadGameplayScreen(); break;
         case ENDING: UnloadEndingScreen(); break;
+        case SELECT_WORLD: UnloadSelectWorldScreen(); break;
+        case MULTIPLAYER: UnloadMultiplayerScreen(); break;
         default: break;
     }
 
     // Unload global data loaded
+    UnloadMenuUi();
     UnloadFont(font);
     UnloadMusicStream(music);
     UnloadSound(fxCoin);
@@ -110,6 +124,7 @@ int main(void)
     CloseAudioDevice();     // Close audio context
 
     CloseWindow();          // Close window and OpenGL context
+    ClientLogClose();
     //--------------------------------------------------------------------------------------
 
     return 0;
@@ -129,6 +144,8 @@ static void ChangeToScreen(int screen)
         case OPTIONS: UnloadOptionsScreen(); break;
         case GAMEPLAY: UnloadGameplayScreen(); break;
         case ENDING: UnloadEndingScreen(); break;
+        case SELECT_WORLD: UnloadSelectWorldScreen(); break;
+        case MULTIPLAYER: UnloadMultiplayerScreen(); break;
         default: break;
     }
 
@@ -140,6 +157,8 @@ static void ChangeToScreen(int screen)
         case OPTIONS: InitOptionsScreen(); break;
         case GAMEPLAY: InitGameplayScreen(); break;
         case ENDING: InitEndingScreen(); break;
+        case SELECT_WORLD: InitSelectWorldScreen(); break;
+        case MULTIPLAYER: InitMultiplayerScreen(); break;
         default: break;
     }
 
@@ -177,6 +196,8 @@ static void UpdateTransition(void)
                 case OPTIONS: UnloadOptionsScreen(); break;
                 case GAMEPLAY: UnloadGameplayScreen(); break;
                 case ENDING: UnloadEndingScreen(); break;
+                case SELECT_WORLD: UnloadSelectWorldScreen(); break;
+                case MULTIPLAYER: UnloadMultiplayerScreen(); break;
                 default: break;
             }
 
@@ -188,6 +209,8 @@ static void UpdateTransition(void)
                 case OPTIONS: InitOptionsScreen(); break;
                 case GAMEPLAY: InitGameplayScreen(); break;
                 case ENDING: InitEndingScreen(); break;
+                case SELECT_WORLD: InitSelectWorldScreen(); break;
+                case MULTIPLAYER: InitMultiplayerScreen(); break;
                 default: break;
             }
 
@@ -241,7 +264,9 @@ static void UpdateDrawFrame(void)
                 UpdateTitleScreen();
 
                 if (FinishTitleScreen() == 1) TransitionToScreen(OPTIONS);
-                else if (FinishTitleScreen() == 2) TransitionToScreen(GAMEPLAY);
+                else if (FinishTitleScreen() == 3) TransitionToScreen(SELECT_WORLD);
+                else if (FinishTitleScreen() == 4) TransitionToScreen(MULTIPLAYER);
+                else if (FinishTitleScreen() == 5) RequestGameExit();
 
             } break;
             case OPTIONS:
@@ -251,12 +276,26 @@ static void UpdateDrawFrame(void)
                 if (FinishOptionsScreen()) TransitionToScreen(TITLE);
 
             } break;
+            case SELECT_WORLD:
+            {
+                UpdateSelectWorldScreen();
+
+                if (FinishSelectWorldScreen() == 1) TransitionToScreen(TITLE);
+                else if (FinishSelectWorldScreen() == 2) TransitionToScreen(GAMEPLAY);
+
+            } break;
+            case MULTIPLAYER:
+            {
+                UpdateMultiplayerScreen();
+
+                if (FinishMultiplayerScreen()) TransitionToScreen(TITLE);
+
+            } break;
             case GAMEPLAY:
             {
                 UpdateGameplayScreen();
 
-                if (FinishGameplayScreen() == 1) TransitionToScreen(ENDING);
-                //else if (FinishGameplayScreen() == 2) TransitionToScreen(TITLE);
+                if (FinishGameplayScreen() == 1) TransitionToScreen(TITLE);
 
             } break;
             case ENDING:
@@ -289,6 +328,8 @@ static void UpdateDrawFrame(void)
             case OPTIONS: DrawOptionsScreen(); break;
             case GAMEPLAY: DrawGameplayScreen(); break;
             case ENDING: DrawEndingScreen(); break;
+            case SELECT_WORLD: DrawSelectWorldScreen(); break;
+            case MULTIPLAYER: DrawMultiplayerScreen(); break;
             default: break;
         }
 
