@@ -6,9 +6,13 @@ Sources for the numbers: the Java Edition pages [Player](https://minecraft.wiki/
 
 ## Tick
 
-One game tick is 1/20 second. The client may render faster. It accumulates frame time and runs zero or more ticks, then draws once. Clamp the backlog so a stall cannot simulate hundreds of ticks. A headless test steps ticks with no window and no dependency on frame time.
+Java Edition steps at 20 Hz. OpenCraft steps at 64 Hz. One sim tick is 1/64 second (15.625 ms). The client may render faster than that. It accumulates frame time, runs zero or more sim ticks, then draws once. Clamp the backlog so a stall cannot simulate hundreds of ticks. A headless test steps ticks with no window and no dependency on frame time.
 
-Day length is 24,000 ticks. Redstone and fluids have their own schedules on top of this clock. They do not get a second clock.
+A subtick is a fraction in `[0, 1)` inside the current sim tick. Inputs, hits, and block edits carry that fraction. The tick applies them in subtick order: advance the sim to the fraction, resolve the event, continue. Subtick does not add a second clock and it is not a variable timestep. Two events in one tick have an order.
+
+The formulas below (gravity `0.08`, jump `0.42`, walk acceleration `0.098`, water every 5 ticks) are Java ticks, each 1/20 second. Do not apply them once per 64 Hz step. Scale the step so one second of OpenCraft ticks matches one second of that recurrence. The acceptance numbers are blocks per second and the jump apex, not "0.08 per sim tick." Five Java ticks of water spread is 16 sim ticks.
+
+The world clock stays a Minecraft day: 24,000 Java ticks, 20 real minutes. Each sim tick advances that clock by `20/64`. Redstone and fluids schedule off this same conversion. They do not get their own clock.
 
 ## Player body
 

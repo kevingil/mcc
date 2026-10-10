@@ -38,7 +38,7 @@ Contracts: `PHYSICS.md`, `WORLD.md`, `SERVER.md`, `SHADERS.md`.
 | S28 | Chunk shader | TODO | S07, S11 |
 | S29 | Water shader | TODO | S10, S28 |
 | S30 | Ray tracing | BLOCKED | S17, S28, S29 |
-| S31 | Accounts | TODO | S17 |
+| S31 | Central database and HTTP | TODO | S17 |
 
 Take the earliest slice in that table whose status is `TODO` and whose blockers are all `DONE`. One session does not take a second slice. S12 is the wide header split. It stays one session and one PR.
 
@@ -48,11 +48,12 @@ Status: TODO
 Blocked by: none
 Owns: `client/screen_gameplay.c`, `common/tick.c`, `common/tick.h`, `tests/tick_test.c`, `CMakeLists.txt`
 
-The gameplay screen accumulates `GetFrameTime()` and calls the simulation at 20 Hz. Rendering still happens once per frame. A stall runs at most five catch-up ticks, then drops the rest.
+The gameplay screen accumulates `GetFrameTime()` and calls the simulation at 64 Hz. Rendering still happens once per frame. A stall runs at most five catch-up ticks, then drops the rest. A subtick is a fraction in `[0, 1)` stored with an input. S01 only has to carry the field. S02 applies events in that order.
 
 Done when:
 
-- [ ] `tests/tick_test` steps 20 ticks and reports one second of simulation time.
+- [ ] `tests/tick_test` steps 64 ticks and reports one second of simulation time.
+- [ ] Two inputs in one tick sort by subtick before either is applied.
 - [ ] The gameplay screen uses that stepper. `UpdatePlayer` is not on a raw frame delta for movement after S02, so this slice only has to introduce the clock and call the existing update from it.
 - [ ] `bash .agents/build.sh` succeeds.
 
@@ -217,7 +218,7 @@ The overworld clock advances with the tick. Sky and fog move between the overwor
 
 Done when:
 
-- [ ] `tests/clock_test` wraps at 24,000 ticks.
+- [ ] `tests/clock_test` wraps at 24,000 world-clock units. One sim tick advances the clock by 20/64, so a day is 20 real minutes.
 - [ ] Standing still for a few in-game hours changes the clear color. The smoke test still sees a lit frame at noon.
 
 Out of scope: weather, a custom shader.
@@ -517,19 +518,20 @@ Done when:
 
 Out of scope: path tracing, reflections, replacing the raster renderer.
 
-## S31: Accounts
+## S31: Central database and HTTP
 
 Status: TODO
 Blocked by: S17
-Owns: `server/http.c`, `server/accounts.c`, `server/main.c`, `tests/accounts_test.c`, `CMakeLists.txt`
+Owns: `common/db.c`, `common/db.h`, `server/http.c`, `server/main.c`, `tests/db_test.c`, `CMakeLists.txt`
 Contract: `SERVER.md`
 
-One process. Civetweb listens on 8080. SQLite `accounts.db` lives in the world directory. The tick thread does not call SQLite. Routes: `GET /health`, `POST /accounts`, `POST /login`, `GET /profile`. Passwords are hashed. No second binary, no C++, no Drogon.
+`opencraft.db` opens through `common/db` and loads sqlite-vec. Kore serves `GET /health` on 8080 and one JSON route that reads a row through that API. The sim thread does not call `sqlite3_step`. Outbound HTTP, if the route needs it, uses Kore's async libcurl hook and does not run inside `Tick`. No PostgreSQL, no second binary, no C++.
 
 Done when:
 
-- [ ] `tests/accounts_test` creates an account, logs in, and reads the profile against a temp database.
+- [ ] `tests/db_test` opens a temp `opencraft.db`, writes a row, reads it back, and confirms sqlite-vec is loaded.
 - [ ] `opencraft-server` answers `GET /health` on 8080 while the game port is open.
+- [ ] A request that hits the database returns after the db thread finishes, and a concurrent request is not stuck behind a sim tick.
 - [ ] `ldd` on `opencraft-server` does not show a C++ standard library.
 
-Out of scope: a website, admin UI, email, and a separate account service.
+Out of scope: account screens, an admin site, vector indexes, and a separate database service.
