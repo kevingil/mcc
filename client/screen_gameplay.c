@@ -50,6 +50,9 @@ static int aimLock = 0;
 static int aimX = 0;
 static int aimY = 0;
 static int aimZ = 0;
+static int lookLock = 0;
+static float lockYaw = 0.0f;
+static float lockPitch = -0.45f;
 
 static int ColumnStandY(VoxelWorld *ground, int x, int z, int *standY)
 {
@@ -288,6 +291,12 @@ void InitGameplayScreen(void)
             LoadChunksAroundPlayer(&world, player.position);
             NetSessionOverlayEdits(&world);
             if (haveLook) StandFacingBlock(&player, &world, lookX, lookY, lookZ, player.position.x, player.position.z);
+            else
+            {
+                lockYaw = player.yaw;
+                lockPitch = player.pitch;
+                lookLock = 300;
+            }
             NetSessionSyncPose(&player);
         }
         nextWorldSave = GetTime() + 20.0;
@@ -385,10 +394,32 @@ void UpdateGameplayScreen(void)
         {
             NetSessionPoll(&world);
             NetSessionOverlayEdits(&world);
-            if (aimLock > 0)
             {
-                FaceBlock(&player, aimX, aimY, aimZ);
-                aimLock--;
+                int lx = 0;
+                int ly = 0;
+                int lz = 0;
+                int lblock = 0;
+
+                if (NetSessionLookBlock(&lx, &ly, &lz, &lblock))
+                {
+                    if ((aimX != lx) || (aimY != ly) || (aimZ != lz) || (aimLock == 0 && lookLock))
+                    {
+                        aimX = lx;
+                        aimY = ly;
+                        aimZ = lz;
+                        aimLock = 180;
+                        lookLock = 0;
+                    }
+                    if (aimLock > 0)
+                    {
+                        FaceBlock(&player, aimX, aimY, aimZ);
+                        aimLock--;
+                    }
+                }
+                else if (lookLock)
+                {
+                    SetPlayerLook(&player, lockYaw, lockPitch);
+                }
             }
             NetSessionSyncInventory(&player);
             NetSessionSyncPose(&player);
