@@ -8,6 +8,7 @@ Contracts: `PHYSICS.md`, `WORLD.md`, `SERVER.md`, `SHADERS.md`.
 
 | Id | Slice | Status | Blocked by |
 | --- | --- | --- | --- |
+| S32 | Texture colors | TODO | |
 | S01 | Fixed tick | TODO | |
 | S02 | Player movement | TODO | S01 |
 | S03 | Block properties | TODO | S02 |
@@ -41,6 +42,24 @@ Contracts: `PHYSICS.md`, `WORLD.md`, `SERVER.md`, `SHADERS.md`.
 | S31 | Central database and HTTP | TODO | S17 |
 
 Take the earliest slice in that table whose status is `TODO` and whose blockers are all `DONE`. One session does not take a second slice. S12 is the wide header split. It stays one session and one PR.
+
+## S32: Texture colors
+
+Status: TODO
+Blocked by: none
+Owns: `client/voxel_renderer.c`, `client/voxel_types.h`, `client/player.c`
+
+The block textures are already loaded. The colors on screen do not match them. A loaded texture is drawn with a white tint. `GetBlockColor` is not multiplied on top of it, and it is not used in place of a texture that loaded. The world face, the hotbar slot, and the inventory slot for one block show the same texels.
+
+Grass top, grass side overlay, and leaves are the exception when the file is a grayscale template. Those get one biome tint, taken from the texture's own colormap, applied once. A texture that is already colored, including Good Vibes art that ships with the color baked in, stays untinted.
+
+Done when:
+
+- [ ] Grass, dirt, stone, oak log, and water show the same color in the world and in the hotbar, and that color matches the PNG.
+- [ ] A block whose texture failed to load may use `GetBlockColor`. A block whose texture loaded may not.
+- [ ] `bash .agents/test.sh` still reaches the title screen.
+
+Out of scope: the chunk shader (S28), animated water (S29), and recoloring blocks that have no texture file.
 
 ## S01: Fixed tick
 

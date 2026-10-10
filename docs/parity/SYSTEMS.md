@@ -72,6 +72,7 @@ Registries list ids. This file lists the systems an id plugs into. Status is for
 
 | System | Status | First slice |
 | --- | --- | --- |
+| Texture colors match the PNG | missing | S32 |
 | Sky and fog | missing | S11 |
 | Chunk shader | missing | S28 |
 | Water shader | missing | S29 |
