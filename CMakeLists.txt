@@ -29,6 +29,9 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(raylib)
 
 # Our Project
+find_package(ZLIB REQUIRED)
+add_subdirectory(common)
+
 add_executable(${PROJECT_NAME})
 add_subdirectory(client)
 
@@ -52,21 +55,17 @@ else()
 endif()
 
 #set(raylib_VERBOSE 1)
-find_package(ZLIB REQUIRED)
-target_link_libraries(${PROJECT_NAME} raylib ZLIB::ZLIB)
+target_link_libraries(${PROJECT_NAME} opencraft_common raylib)
 
 add_executable(save_format_test
     tests/save_format_test.c
-    client/nbt.c
-    client/chunk_codec.c
-    client/anvil.c
-    client/level_data.c
     client/client_log.c
 )
 target_include_directories(save_format_test PRIVATE client)
-target_link_libraries(save_format_test ZLIB::ZLIB)
+target_link_libraries(save_format_test opencraft_common)
 
 add_executable(opencraft-server server/main.c)
+target_link_libraries(opencraft-server PRIVATE opencraft_common)
 set_target_properties(opencraft-server PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/server)
 
