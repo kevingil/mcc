@@ -488,8 +488,8 @@ void DrawGameplayScreen(void)
         }
     }
     
-    // Debug information (only when not paused)
-    if (!gamePaused) {
+    // Debug information stays off the inventory and the pause menu.
+    if (!gamePaused && !player.inventoryOpen) {
         DrawFPS(10, 10);
         
         // Position info
@@ -535,7 +535,7 @@ void DrawGameplayScreen(void)
     }
     
     // Controls help (when cursor is visible and game not paused)
-    if (!IsCursorHidden() && !gamePaused) {
+    if (!IsCursorHidden() && !gamePaused && !player.inventoryOpen) {
         int screenWidth = GetScreenWidth();
         int screenHeight = GetScreenHeight();
         
@@ -560,10 +560,12 @@ void DrawGameplayScreen(void)
     {
         const Biome *biome = BiomeAt((int)player.position.x, (int)player.position.z);
         int scale = MenuScale();
+        const char *title = TextFormat("%s    %d / %d", biome->name, BiomeTourIndex() + 1, BiomeCount());
+        int fontSize = 12*scale;
+        int y = GetScreenHeight() - 22*scale - fontSize - 10*scale;
 
-        DrawRectangle(0, 0, GetScreenWidth(), 28*scale, Fade(BLACK, 0.55f));
-        DrawMenuText(8*scale, 8*scale, 12*scale, TextFormat("%s", biome->name), WHITE);
-        DrawMenuText(GetScreenWidth() - 80*scale, 8*scale, 8*scale, TextFormat("%d / %d", BiomeTourIndex() + 1, BiomeCount()), WHITE);
+        DrawRectangle(0, y - 4*scale, GetScreenWidth(), fontSize + 8*scale, Fade(BLACK, 0.55f));
+        DrawMenuTextCentered(GetScreenWidth()/2, y, fontSize, title, WHITE);
     }
 
     // Draw pause menu
