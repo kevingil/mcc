@@ -27,9 +27,12 @@
 #include "net_session.h"
 #include "menu_ui.h"
 #include "biomes.h"
+#include <GL/gl.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
 //----------------------------------------------------------------------------------
 // Module Variables Definition (local)
@@ -42,6 +45,10 @@ static bool gamePaused = false;
 static int pauseMenuSelection = 0;
 static int pauseMenuItemCount = 6;
 static const char *pauseNotice = NULL;
+static int debugHud = 0;
+static float frameSamples[240];
+static int frameCursor = 0;
+static int frameFilled = 0;
 
 // Voxel game systems
 static VoxelWorld world;
@@ -208,6 +215,7 @@ static void StandFacingBlock(Player *body, VoxelWorld *ground, int bx, int by, i
 //----------------------------------------------------------------------------------
 static void LayoutPause(MenuButton *buttons);
 static void DrawPauseMenu(void);
+static void NoteFrameTime(void);
 
 //----------------------------------------------------------------------------------
 // Gameplay Screen Functions Definition
@@ -331,6 +339,8 @@ void InitGameplayScreen(void)
 void UpdateGameplayScreen(void)
 {
     framesCounter++;
+    NoteFrameTime();
+    if (IsKeyPressed(KEY_F3) && !player.searchFocused) debugHud = !debugHud;
     
     // Handle ESC key for pause menu (only when inventory is not open)
     if (IsKeyPressed(KEY_ESCAPE))
@@ -459,6 +469,206 @@ void UpdateGameplayScreen(void)
     }
 }
 
+static void NoteFrameTime(void)
+{
+    frameSamples[frameCursor] = GetFrameTime()*1000.0f;
+    frameCursor = (frameCursor + 1)%240;
+    if (frameFilled < 240) frameFilled++;
+}
+
+static void DebugText(int x, int y, const char *text, int alignRight)
+{
+    int size = 10;
+    int width = MeasureText(text, size);
+    int drawX = alignRight ? (GetScreenWidth() - 4 - width) : x;
+
+    DrawText(text, drawX + 1, y + 1, size, BLACK);
+    DrawText(text, drawX, y, size, WHITE);
+}
+
+static void ReadMachine(char *cpu, int cpuCap, int *cores, long *rssKb, long *virtKb)
+{
+    FILE *info = NULL;
+    FILE *mem = NULL;
+    char line[256];
+    long pages = 0;
+    long resident = 0;
+    long page = sysconf(_SC_PAGESIZE);
+
+    if ((cpu[0] == '\0') && ((info = fopen("/proc/cpuinfo", "r")) != NULL))
+    {
+        *cores = 0;
+        while (fgets(line, (int)sizeof(line), info) != NULL)
+        {
+            if (strncmp(line, "processor", 9) == 0) (*cores)++;
+            if ((cpu[0] == '\0') && (strncmp(line, "model name", 10) == 0))
+            {
+                char *colon = strchr(line, ':');
+                if (colon != NULL)
+                {
+                    colon++;
+                    while (*colon == ' ') colon++;
+                    snprintf(cpu, (size_t)cpuCap, "%s", colon);
+                    cpu[strcspn(cpu, "\n")] = '\0';
+                }
+            }
+        }
+        fclose(info);
+    }
+    mem = fopen("/proc/self/statm", "r");
+    if (mem != NULL)
+    {
+        if (fscanf(mem, "%ld %ld", &pages, &resident) == 2)
+        {
+            *virtKb = pages*page/1024;
+            *rssKb = resident*page/1024;
+        }
+        fclose(mem);
+    }
+}
+
+static int SkyLightAt(VoxelWorld *ground, int x, int y, int z)
+{
+    int above = y + 1;
+
+    for (; above < WORLD_HEIGHT; above++)
+    {
+        BlockPos pos = { x, above, z };
+        BlockType block = GetBlock(ground, pos);
+        if ((block != BLOCK_AIR) && !IsWaterBlock(block)) return 0;
+    }
+    return 15;
+}
+
+static void DrawFrameGraph(int x, int y, int width, int height, Color color)
+{
+    int i = 0;
+    float minMs = 1000.0f;
+    float maxMs = 0.0f;
+    float sum = 0.0f;
+
+    DrawRectangle(x, y - height, width, height, (Color){ 0, 0, 0, 140 });
+    if (frameFilled <= 0) return;
+    for (i = 0; i < frameFilled; i++)
+    {
+        float sample = frameSamples[i];
+        int bar = 0;
+        int sx = 0;
+
+        if (sample < minMs) minMs = sample;
+        if (sample > maxMs) maxMs = sample;
+        sum += sample;
+        bar = (int)(sample*2.0f);
+        if (bar < 1) bar = 1;
+        if (bar > height) bar = height;
+        sx = x + (i*width)/240;
+        DrawRectangle(sx, y - bar, 1, bar, color);
+    }
+    DebugText(x, y - height - 12, TextFormat("%.0f ms min   %.0f ms avg   %.0f ms max", minMs, sum/(float)frameFilled, maxMs), 0);
+}
+
+static void DrawDebugHud(void)
+{
+    static char cpu[160] = "";
+    static int cores = 0;
+    static long lastRss = 0;
+    static double lastMemTime = 0.0;
+    static double allocRate = 0.0;
+    long rssKb = 0;
+    long virtKb = 0;
+    int blockX = (int)floorf(player.position.x);
+    int blockY = (int)floorf(player.position.y);
+    int blockZ = (int)floorf(player.position.z);
+    int localX = blockX%CHUNK_SIZE;
+    int localY = blockY;
+    int localZ = blockZ%CHUNK_SIZE;
+    ChunkPos chunk = WorldToChunk(player.position);
+    const Biome *biome = BiomeAt(blockX, blockZ);
+    BlockPos feet = { blockX, blockY, blockZ };
+    BlockType feetBlock = GetBlock(&world, feet);
+    int meshed = 0;
+    int loaded = 0;
+    int i = 0;
+    int y = 2;
+    int line = 11;
+    float yawDeg = player.yaw*(180.0f/PI);
+    float pitchDeg = player.pitch*(180.0f/PI);
+    float lookX = sinf(player.yaw);
+    float lookZ = cosf(player.yaw);
+    const char *facing = "south";
+    const char *axis = "positive Z";
+    const char *gpu = (const char *)glGetString(GL_RENDERER);
+    const char *glVersion = (const char *)glGetString(GL_VERSION);
+    unsigned int seed = NetSessionIsInWorld() ? NetSessionSeed() : WorldSaveSeed();
+    float terrain = SimplexNoise2D((float)blockX*0.01f, (float)blockZ*0.01f);
+    float continent = SimplexNoise2D((float)blockX*0.0025f, (float)blockZ*0.0025f);
+    double now = GetTime();
+
+    if (localX < 0) localX += CHUNK_SIZE;
+    if (localZ < 0) localZ += CHUNK_SIZE;
+    if (fabsf(lookX) > fabsf(lookZ))
+    {
+        if (lookX > 0.0f) { facing = "east"; axis = "positive X"; }
+        else { facing = "west"; axis = "negative X"; }
+    }
+    else if (lookZ < 0.0f) { facing = "north"; axis = "negative Z"; }
+    while (yawDeg < 0.0f) yawDeg += 360.0f;
+    while (yawDeg >= 360.0f) yawDeg -= 360.0f;
+
+    ReadMachine(cpu, (int)sizeof(cpu), &cores, &rssKb, &virtKb);
+    if ((lastMemTime == 0.0) || (now - lastMemTime >= 1.0))
+    {
+        allocRate = (double)(rssKb - lastRss);
+        lastRss = rssKb;
+        lastMemTime = now;
+    }
+    for (i = 0; i < MAX_CHUNKS; i++)
+    {
+        if (!world.chunks[i].isLoaded) continue;
+        loaded++;
+        if (world.chunks[i].hasMesh) meshed++;
+    }
+
+    DebugText(2, y, TextFormat("OpenCraft %s", OPENCRAFT_VERSION), 0); y += line;
+    DebugText(2, y, TextFormat("%d fps  T: %.1f ms  vsync: %s", GetFPS(), GetFrameTime()*1000.0f,
+        IsWindowState(FLAG_VSYNC_HINT) ? "on" : "off"), 0); y += line;
+    DebugText(2, y, NetSessionIsInWorld() ? "Server: dedicated opencraft-server" : "Integrated server: local world", 0); y += line;
+    DebugText(2, y, TextFormat("C: %d/%d  D: %d  E: 1/1", meshed, loaded, GameRenderDistance()), 0); y += line;
+    DebugText(2, y, TextFormat("Chunks: %d loaded, height %d", loaded, WORLD_HEIGHT), 0); y += line;
+    DebugText(2, y, TextFormat("minecraft:overworld  seed %u", seed), 0); y += line;
+    DebugText(2, y, TextFormat("XYZ: %.3f / %.5f / %.3f", player.position.x, player.position.y, player.position.z), 0); y += line;
+    DebugText(2, y, TextFormat("Block: %d %d %d [%s]", blockX, blockY, blockZ, GetBlockName(feetBlock)), 0); y += line;
+    DebugText(2, y, TextFormat("Chunk: %d %d %d in r.%d.%d.mca", localX, localY, localZ, chunk.x >> 5, chunk.z >> 5), 0); y += line;
+    DebugText(2, y, TextFormat("Facing: %s (Towards %s) (%.1f / %.1f)", facing, axis, yawDeg, pitchDeg), 0); y += line;
+    DebugText(2, y, TextFormat("Client Light: %d sky, 0 block", SkyLightAt(&world, blockX, blockY, blockZ)), 0); y += line;
+    DebugText(2, y, TextFormat("Biome: %s", (biome != NULL) ? biome->id : "unknown"), 0); y += line;
+    DebugText(2, y, "Local Difficulty: 0.00 / 0.00 (no day cycle)", 0); y += line;
+    DebugText(2, y, TextFormat("Noise  T: %.3f  C: %.3f", terrain, continent), 0); y += line;
+    DebugText(2, y, TextFormat("Biome builder: %s / %s",
+        (biome != NULL) ? biome->name : "unknown",
+        (biome != NULL) ? GetBlockName((BlockType)biome->surface) : "air"), 0); y += line;
+    if (player.hasTarget)
+    {
+        DebugText(2, y, TextFormat("Targeted: %s %d %d %d", GetBlockName((BlockType)GetBlock(&world, player.targetBlock)),
+            player.targetBlock.x, player.targetBlock.y, player.targetBlock.z), 0);
+        y += line;
+    }
+    DebugText(2, y, "SC: 0  Sounds: 0/0 (Mood 0%)", 0); y += line;
+    DebugText(2, y, "For help: press F3", 0);
+
+    y = 2;
+    DebugText(0, y, TextFormat("Mem: %ldMB / %ldMB", rssKb/1024, virtKb/1024), 1); y += line;
+    DebugText(0, y, TextFormat("Allocation rate: %.0fKB/s", allocRate), 1); y += line;
+    DebugText(0, y, TextFormat("Allocated: %ldMB", rssKb/1024), 1); y += line;
+    DebugText(0, y, TextFormat("CPU: %dx %s", cores, (cpu[0] != '\0') ? cpu : "unknown"), 1); y += line;
+    DebugText(0, y, TextFormat("Display: %dx%d", GetScreenWidth(), GetScreenHeight()), 1); y += line;
+    DebugText(0, y, (gpu != NULL) ? gpu : "GPU unknown", 1); y += line;
+    DebugText(0, y, (glVersion != NULL) ? glVersion : "", 1);
+
+    DrawFrameGraph(4, GetScreenHeight() - 8, 240, 36, (Color){ 80, 255, 80, 255 });
+    DebugText(4, GetScreenHeight() - 62, TextFormat("%d FPS", GetFPS()), 0);
+}
+
 // Gameplay Screen Draw logic
 void DrawGameplayScreen(void)
 {
@@ -488,72 +698,10 @@ void DrawGameplayScreen(void)
         }
     }
     
-    // Debug information stays off the inventory and the pause menu.
-    if (!gamePaused && !player.inventoryOpen) {
-        DrawFPS(10, 10);
-        
-        // Position info
-        DrawText(TextFormat("Position: (%.1f, %.1f, %.1f)", 
-                 player.position.x, player.position.y, player.position.z), 
-                 10, 30, 20, WHITE);
-        
-        // Chunk info
-        ChunkPos playerChunk = WorldToChunk(player.position);
-        DrawText(TextFormat("Chunk: (%d, %d) | Loaded Chunks: %d", 
-                 playerChunk.x, playerChunk.z, world.chunkCount), 
-                 10, 50, 20, WHITE);
-        
-        // Debug: Check if current chunk is loaded
-        Chunk* currentChunk = GetChunk(&world, playerChunk);
-        Color chunkStatusColor = currentChunk ? GREEN : RED;
-        DrawText(TextFormat("Current Chunk: %s", currentChunk ? "LOADED" : "NOT LOADED"), 
-                 10, 70, 20, chunkStatusColor);
-        
-        // Debug: Check ground block
-        BlockPos groundPos = {(int)player.position.x, (int)(player.position.y - 1), (int)player.position.z};
-        BlockType groundBlock = GetBlock(&world, groundPos);
-        DrawText(TextFormat("Ground Block: %d (%s)", groundBlock, 
-                 groundBlock == BLOCK_AIR ? "AIR" : "SOLID"), 
-                 10, 90, 20, groundBlock == BLOCK_AIR ? RED : GREEN);
+    if (debugHud && !gamePaused && !player.inventoryOpen) DrawDebugHud();
 
-        // Always render block debug info, handle null/air targetBlock
-        BlockType targetBlock = GetBlock(&world, player.targetBlock);
-        const char* blockName = GetBlockName(targetBlock);
-        const char* textureName = GetBlockTextureName(targetBlock, FACE_TOP);
-
-        if (player.hasTarget && targetBlock != BLOCK_AIR) {
-            DrawText(TextFormat("Target Block: %s", blockName), 10, 110, 20, YELLOW);
-            DrawText(TextFormat("Texture: %s.png", textureName), 10, 130, 20, LIGHTGRAY);
-            DrawText(TextFormat("Block Pos: (%d, %d, %d)", 
-                     player.targetBlock.x, player.targetBlock.y, player.targetBlock.z), 
-                     10, 150, 20, GRAY);
-        } else {
-            DrawText("Target Block: (none)", 10, 110, 20, DARKGRAY);
-            DrawText("Texture: (none)", 10, 130, 20, DARKGRAY);
-            DrawText("Block Pos: (-, -, -)", 10, 150, 20, DARKGRAY);
-        }
-    }
-    
-    // Controls help (when cursor is visible and game not paused)
-    if (!IsCursorHidden() && !gamePaused && !player.inventoryOpen) {
-        int screenWidth = GetScreenWidth();
-        int screenHeight = GetScreenHeight();
-        
-        DrawText("VOXEL WORLD GAME", screenWidth/2 - 150, 100, 30, WHITE);
-        DrawText("CONTROLS:", 50, 150, 20, YELLOW);
-        DrawText("WASD - Move", 50, 180, 18, WHITE);
-        DrawText("Mouse - Look around", 50, 200, 18, WHITE);
-        DrawText("SPACE - Jump", 50, 220, 18, WHITE);
-        DrawText("LEFT SHIFT - Run", 50, 240, 18, WHITE);
-        DrawText("LEFT CLICK - Break block", 50, 260, 18, WHITE);
-        DrawText("RIGHT CLICK - Place block", 50, 280, 18, WHITE);
-        DrawText("BUCKET - Pick up and place water", 50, 300, 18, WHITE);
-        DrawText("1-9 - Select block type", 50, 320, 18, WHITE);
-        DrawText("E - Open inventory", 50, 340, 18, WHITE);
-        DrawText("ESC - Open pause menu", 50, 360, 18, WHITE);
-        DrawText("ENTER - Return to menu", 50, 380, 18, WHITE);
-        
-        DrawText("Click to start playing!", screenWidth/2 - 120, screenHeight - 50, 20, YELLOW);
+    if (!IsCursorHidden() && !gamePaused && !player.inventoryOpen && !debugHud) {
+        DrawText("Click to play", GetScreenWidth()/2 - 70, GetScreenHeight() - 40, 20, YELLOW);
     }
     
     if (BiomeTourActive())
@@ -573,7 +721,7 @@ void DrawGameplayScreen(void)
         DrawPauseMenu();
     }
 
-    if (NetSessionIsInWorld())
+    if (NetSessionIsInWorld() && !debugHud)
     {
         const char *held = GetBlockName(player.selectedBlock);
         const char *edit = NetSessionEditLine();
