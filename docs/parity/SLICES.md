@@ -457,11 +457,11 @@ Out of scope: armor, baby zombies, reinforcements, other hostiles.
 
 ## S25: Four biomes
 
-Status: TODO
+Status: PARTIAL
 Blocked by: S08, S17
 Owns: `client/world_generation.c`, `client/world_generation.h`, `tests/biome_test.c`, `CMakeLists.txt`
 
-Columns are plains, forest, desert, or ocean. Forest places oak trees. Desert places sand and cactus. Ocean is water to sea level. Plains are grass. The same seed is stable across a reload. Other biome ids stay missing.
+Columns pick a surface palette. Forest places oak trees. Desert places sand and cactus. Ocean is water to sea level. Plains are grass. `MCC_BIOME_TOUR` walks every registry id. The same seed is stable across a reload. Palettes are not climate, caves, or structures.
 
 Done when:
 

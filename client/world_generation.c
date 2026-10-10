@@ -1,4 +1,5 @@
 #include "world_generation.h"
+#include "biomes.h"
 #include "raymath.h"
 #include <math.h>
 #include <stdlib.h>
@@ -62,11 +63,35 @@ void InitWorldGeneration(void) {
 
 void SetWorldGenerationSeed(unsigned int seed) {
     worldSeed = seed;
+    BiomeSetSeed(seed);
+}
+
+static int TourLocalX(int x) {
+    int local = x % BIOME_STRIDE;
+    if (local < 0) local += BIOME_STRIDE;
+    return local;
 }
 
 float GetTerrainHeight(int x, int z) {
+    const Biome *biome = BiomeAt(x, z);
     // Generate height using multiple octaves of noise
     float height = 0.0f;
+
+    if (BiomeTourActive()) {
+        int localX = TourLocalX(x);
+        int mid = BIOME_STRIDE/2;
+        int dx = abs(localX - mid);
+        int dz = abs(z - mid);
+
+        if (biome->flags & BIOME_VOID) {
+            if ((dx <= 2) && (dz <= 2)) return (float)(WATER_LEVEL + 4);
+            return 6.0f;
+        }
+        if (biome->flags & BIOME_ISLAND) {
+            if ((dx > 8) || (dz > 8)) return 6.0f;
+        }
+        return (float)(WATER_LEVEL + biome->lift);
+    }
     float amplitude = TERRAIN_HEIGHT;
     float frequency = TERRAIN_SCALE;
     
@@ -150,38 +175,58 @@ bool ShouldPlaceTree(int x, int z) {
     return (treeNoise > 0.7f) && (((unsigned int)hash2D(x, z)%100u) < (unsigned int)(TREE_FREQUENCY*100.0f));
 }
 
-void PlaceTree(Chunk* chunk, int x, int y, int z) {
-    int worldX = chunk->position.x*CHUNK_SIZE + x;
-    int worldZ = chunk->position.z*CHUNK_SIZE + z;
-    int treeHeight = 4 + (int)((unsigned int)hash2D(worldX, worldZ)%3u);
-    
-    // Place trunk
-    for (int i = 0; i < treeHeight; i++) {
-        if (y + i < WORLD_HEIGHT) {
-            chunk->blocks[x][y + i][z] = BLOCK_OAK_LOG;
-        }
+static void PlaceTreeOf(Chunk* chunk, int x, int y, int z, BlockType log, BlockType leaves, int treeHeight) {
+    int i = 0;
+
+    if (treeHeight < 3) treeHeight = 3;
+    for (i = 0; i < treeHeight; i++) {
+        if (y + i < WORLD_HEIGHT) chunk->blocks[x][y + i][z] = log;
     }
-    
-    // Place leaves (3x3x3 cube at top)
+
     for (int dx = -1; dx <= 1; dx++) {
         for (int dz = -1; dz <= 1; dz++) {
             for (int dy = 0; dy <= 2; dy++) {
                 int leafX = x + dx;
                 int leafY = y + treeHeight - 1 + dy;
                 int leafZ = z + dz;
-                
-                // Check bounds
-                if (leafX >= 0 && leafX < CHUNK_SIZE && 
+
+                if (leafX >= 0 && leafX < CHUNK_SIZE &&
                     leafZ >= 0 && leafZ < CHUNK_SIZE &&
                     leafY >= 0 && leafY < WORLD_HEIGHT) {
-                    
-                    // Don't replace trunk blocks
-                    if (chunk->blocks[leafX][leafY][leafZ] != BLOCK_OAK_LOG) {
-                        chunk->blocks[leafX][leafY][leafZ] = BLOCK_OAK_LEAVES;
+                    if (chunk->blocks[leafX][leafY][leafZ] != log) {
+                        chunk->blocks[leafX][leafY][leafZ] = leaves;
                     }
                 }
             }
         }
+    }
+}
+
+void PlaceTree(Chunk* chunk, int x, int y, int z) {
+    int worldX = chunk->position.x*CHUNK_SIZE + x;
+    int worldZ = chunk->position.z*CHUNK_SIZE + z;
+    int treeHeight = 4 + (int)((unsigned int)hash2D(worldX, worldZ)%3u);
+
+    PlaceTreeOf(chunk, x, y, z, BLOCK_OAK_LOG, BLOCK_OAK_LEAVES, treeHeight);
+}
+
+static BlockType BandBlock(int y) {
+    BlockType bands[5] = {
+        BLOCK_TERRACOTTA,
+        BLOCK_ORANGE_TERRACOTTA,
+        BLOCK_RED_TERRACOTTA,
+        BLOCK_YELLOW_TERRACOTTA,
+        BLOCK_BROWN_TERRACOTTA
+    };
+    int index = y/2;
+    if (index < 0) index = -index;
+    return bands[index%5];
+}
+
+static void PlaceFeature(Chunk *chunk, int x, int y, int z, BlockType block, int height) {
+    int i = 0;
+    for (i = 0; i < height; i++) {
+        if ((y + i >= 0) && (y + i < WORLD_HEIGHT)) chunk->blocks[x][y + i][z] = block;
     }
 }
 
@@ -206,33 +251,64 @@ void GenerateChunk(Chunk* chunk) {
             if (height < 0) height = 0;
             if (height >= WORLD_HEIGHT) height = WORLD_HEIGHT - 1;
             
-            // Generate layers
+            const Biome *biome = BiomeAt(worldX, worldZ);
+            unsigned roll = (unsigned int)hash2D(worldX, worldZ);
+            BlockType surface = (BlockType)biome->surface;
+            BlockType filler = (BlockType)biome->filler;
+            BlockType rock = (BlockType)biome->rock;
+
+            if (!BiomeTourActive() && (height <= WATER_LEVEL + 1) && !(biome->flags & BIOME_OCEAN)) {
+                surface = BLOCK_SAND;
+                filler = BLOCK_SAND;
+            }
+            if (biome->flags & BIOME_BANDS) {
+                surface = BandBlock(height);
+                filler = BandBlock(height - 1);
+            }
+
             for (int y = 0; y <= height; y++) {
-                if (y < height - 3) {
-                    // Stone layer
-                    chunk->blocks[x][y][z] = BLOCK_STONE;
-                } else if (y < height) {
-                    if (height <= WATER_LEVEL + 2) chunk->blocks[x][y][z] = BLOCK_SAND;
-                    else chunk->blocks[x][y][z] = BLOCK_DIRT;
-                } else {
-                    // Beaches and lake beds are sand. Inland tops are grass.
-                    if (height <= WATER_LEVEL + 2) chunk->blocks[x][y][z] = BLOCK_SAND;
-                    else chunk->blocks[x][y][z] = BLOCK_GRASS;
-                }
+                if (y < height - 3) chunk->blocks[x][y][z] = rock;
+                else if (y < height) chunk->blocks[x][y][z] = (biome->flags & BIOME_BANDS) ? BandBlock(y) : filler;
+                else chunk->blocks[x][y][z] = surface;
             }
-            
-            // Add water
+
             for (int y = height + 1; y <= WATER_LEVEL; y++) {
-                if (y < WORLD_HEIGHT) {
-                    chunk->blocks[x][y][z] = BLOCK_WATER;
-                }
+                if (y < WORLD_HEIGHT) chunk->blocks[x][y][z] = BLOCK_WATER;
             }
-            
-            // Place trees on grass
-            if (height > WATER_LEVEL && chunk->blocks[x][height][z] == BLOCK_GRASS) {
-                if (ShouldPlaceTree(worldX, worldZ)) {
-                    PlaceTree(chunk, x, height + 1, z);
-                }
+            if ((biome->flags & BIOME_ICE) && (height < WATER_LEVEL) && (WATER_LEVEL < WORLD_HEIGHT)) {
+                chunk->blocks[x][WATER_LEVEL][z] = BLOCK_ICE;
+            }
+
+            if ((biome->log != BLOCK_AIR) && (height > WATER_LEVEL) && ((roll % 1000u) < biome->trees)) {
+                int treeHeight = 4 + (int)(roll % 3u);
+                if (biome->flags & BIOME_POLE) PlaceFeature(chunk, x, height + 1, z, BLOCK_LIME_CONCRETE, 6);
+                else PlaceTreeOf(chunk, x, height + 1, z, (BlockType)biome->log, (BlockType)biome->leaves, treeHeight);
+            } else if ((biome->flags & BIOME_CACTUS) && (surface == BLOCK_SAND) && ((roll % 17u) == 0)) {
+                PlaceFeature(chunk, x, height + 1, z, BLOCK_CACTUS, 3);
+            } else if ((biome->flags & BIOME_SPIKE) && ((roll % 9u) == 0)) {
+                BlockType spike = (surface == BLOCK_SNOW_BLOCK || surface == BLOCK_PACKED_ICE) ? BLOCK_PACKED_ICE : BLOCK_GRANITE;
+                if (biome->rock == BLOCK_STONE && surface == BLOCK_STONE) spike = BLOCK_ANDESITE;
+                PlaceFeature(chunk, x, height + 1, z, spike, 6 + (int)(roll % 6u));
+            } else if ((biome->flags & BIOME_MELON) && ((roll % 23u) == 0) && (height + 1 < WORLD_HEIGHT)) {
+                chunk->blocks[x][height + 1][z] = BLOCK_MELON;
+            } else if ((biome->flags & BIOME_PUMPKIN) && ((roll % 29u) == 0) && (height + 1 < WORLD_HEIGHT)) {
+                chunk->blocks[x][height + 1][z] = ((roll % 2u) == 0) ? BLOCK_PUMPKIN : BLOCK_RED_CONCRETE;
+            } else if ((biome->flags & BIOME_HAY) && ((roll % 19u) == 0) && (height + 1 < WORLD_HEIGHT)) {
+                chunk->blocks[x][height + 1][z] = BLOCK_HAY_BLOCK;
+            } else if ((biome->flags & BIOME_GLOW) && ((roll % 11u) == 0) && (height + 1 < WORLD_HEIGHT)) {
+                chunk->blocks[x][height + 1][z] = BLOCK_GLOWSTONE;
+            } else if ((biome->flags & BIOME_MAGMA) && ((roll % 7u) == 0)) {
+                chunk->blocks[x][height][z] = BLOCK_MAGMA_BLOCK;
+            } else if ((biome->flags & BIOME_BONE) && ((roll % 8u) == 0)) {
+                PlaceFeature(chunk, x, height + 1, z, BLOCK_BONE_BLOCK, 4);
+            } else if ((biome->flags & BIOME_PURPUR) && ((roll % 13u) == 0)) {
+                PlaceFeature(chunk, x, height + 1, z, BLOCK_PURPUR_BLOCK, 5);
+            }
+
+            if (BiomeTourActive() && (TourLocalX(worldX) == 0)) {
+                int top = height + 3;
+                if (top >= WORLD_HEIGHT) top = WORLD_HEIGHT - 1;
+                for (int y = 0; y <= top; y++) chunk->blocks[x][y][z] = BLOCK_BEDROCK;
             }
         }
     }
