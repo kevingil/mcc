@@ -31,10 +31,10 @@ cd client
 ../build/mcc/mcc
 ```
 
-The server has no resources and no window:
+The server has no resources and no window. It listens on 0.0.0.0:25570 and stores accounts in `world/opencraft.db`:
 
 ```sh
-./build/server/opencraft-server
+./build/server/opencraft-server --port 25570 --world world
 ```
 
 Enter on the title screen starts the world. The rest of the controls are in the project README. With no sound card, raylib prints ALSA warnings and continues.

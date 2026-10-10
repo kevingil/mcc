@@ -61,6 +61,37 @@ Chunk packets use the section layout from `WORLD.md`. The protocol slice is bloc
 
 v1 has no chat, no encryption, and no compression. A shared secret can wait. Operators who need a private server put it behind a firewall or a tunnel.
 
+### Session packets
+
+The playable session uses the frame above and adds account packets. Chunk section packets are not sent yet. The shared map is the world seed plus every block edit. Clients generate terrain from the seed and apply the edits. Block ids are the client's `BlockType` values (`u16`), not registry strings, because that string table is not in the binary yet.
+
+Client to server, after Hello (`u16 protocol`):
+
+| id | name | body |
+| --- | --- | --- |
+| 3 | Register | `u8` username, `u8` password, `u8` email. Email may be empty. |
+| 4 | Login | `u8` username, `u8` password |
+| 5 | Join | empty |
+| 6 | Block | `i32 x y z`, `u16 block` |
+| 7 | Inventory | `u8 selected slot`, 9 hotbar stacks (`u16 block`, `u16 count`), 45 inventory stacks in the same shape |
+| 8 | Disconnect | empty |
+
+Server to client:
+
+| id | name | body |
+| --- | --- | --- |
+| 1 | Welcome | as in the table above. Sent on Join, not on Hello. |
+| 3 | Block | `i32 x y z`, `u16 block`. Broadcast to every joined client. |
+| 5 | Reject | `u8 code`, `u8` text |
+| 6 | Inventory | same body as the client inventory packet |
+| 7 | Snapshot | `u32 count`, then that many `i32 x y z`, `u16 block` |
+| 8 | LoginOk | `u32 account id`, `u8` name |
+| 9 | RegisterOk | same body as LoginOk |
+
+A bad password, a taken username, a bad email, and a dead server are reported with Reject. The client shows that text. Passwords are SHA-256 of a random salt plus the password. The database stores the hash and the salt, never the password.
+
+SQLite `sqlite3_step` runs on the server thread. There is no Kore worker in this slice, so a completion queue would only move the same write onto another thread. S31 still owns that API. `extension_status` records whether sqlite-vec loaded. The feature does not require it.
+
 Prediction and interpolation are not in the direct-connect slice. The client draws the latest Welcome and Entity positions. It will feel laggy on a distant VPS. That is acceptable until a later slice adds prediction. Do not hide that lag by letting the client decide block breaks. Place and break are server packets. The authoritative-edit slice is the one that removes the local write.
 
 ## Async I/O and the database

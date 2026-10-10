@@ -59,14 +59,15 @@ Registries list ids. This file lists the systems an id plugs into. Status is for
 
 | System | Status | First slice |
 | --- | --- | --- |
-| Headless server | missing | S12 |
-| Protocol v1 | missing | S13 |
-| Direct connect | missing | S14 |
+| Headless server | partial | `opencraft-server` binds 0.0.0.0:25570 and counts a 20 Hz loop. It does not simulate the voxel world yet. S12 |
+| Protocol v1 | partial | Length-prefixed frames. Hello, account, join, block, inventory, and a block-edit snapshot. No section chunks and no Input simulation. S13 |
+| Direct connect | partial | The multiplayer screen takes host, port, username, password, and optional email, then joins. S14 |
 | Server list | missing | S15 |
-| Authoritative edits | missing | S16 |
+| Authoritative edits | partial | Place and break are stored in `opencraft.db` and broadcast. The placing client also draws the edit immediately. S16 |
 | Other players | missing | S17 |
+| Account inventory | partial | Hotbar stacks and the selected slot reload from `opencraft.db` for that account. The creative grid is stored once the client has sent it. |
 | Realms | missing | stays a coming-soon screen. Not a hosting target |
-| Authentication | missing | firewall or tunnel in v1. No Microsoft accounts |
+| Authentication | partial | Username and password hash, optional email, created in the client. No Microsoft accounts. HTTP signup is not this path. |
 
 ## Presentation
 
