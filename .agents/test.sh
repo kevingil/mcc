@@ -77,7 +77,8 @@ echo "title mean=$TITLE_MEAN"
 loaded=0
 xdotool windowfocus --sync "$WID"
 xdotool key --clearmodifiers Return
-sleep 1.2
+# The fade into the world list is about a second. A second Enter during it is dropped.
+sleep 2.5
 xdotool windowfocus --sync "$WID"
 xdotool key --clearmodifiers Return
 sleep 1.2
