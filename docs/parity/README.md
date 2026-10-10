@@ -32,7 +32,7 @@ The playable loop is a singleplayer world.
 - The player is 0.6 by 1.8 with the camera at 1.62, which matches the standing hitbox and eye height. Movement is per frame: walk 5.0 blocks/s, sprint 8.0, gravity 20, jump impulse 8. `client/player.c`. Java Edition's numbers are in `PHYSICS.md`.
 - Saves: gzip NBT `level.dat`, edited chunks in `region/r.<x>.<z>.mca`. Unedited chunks are regenerated from the seed.
 - Rendering is raylib's default material. `LoadMaterialDefault()` in `client/voxel_renderer.c`. No game shader, no ray tracing.
-- There is no server binary.
+- `opencraft-server` links `common/` and exits. It does not open a socket or tick a world.
 
 Nothing in the registries is `done`. A cube is not parity.
 

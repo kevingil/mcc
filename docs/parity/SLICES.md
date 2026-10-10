@@ -45,7 +45,7 @@ Take the earliest slice in that table whose status is `TODO` and whose blockers 
 
 Status: TODO
 Blocked by: none
-Owns: `client/screen_gameplay.c`, `game/tick.c`, `game/tick.h`, `tests/tick_test.c`, `CMakeLists.txt`
+Owns: `client/screen_gameplay.c`, `common/tick.c`, `common/tick.h`, `tests/tick_test.c`, `CMakeLists.txt`
 
 The gameplay screen accumulates `GetFrameTime()` and calls the simulation at 20 Hz. Rendering still happens once per frame. A stall runs at most five catch-up ticks, then drops the rest.
 
@@ -61,7 +61,7 @@ Out of scope: changing walk speed, fluids, or the mesh.
 
 Status: TODO
 Blocked by: S01
-Owns: `game/physics.c`, `game/physics.h`, `client/player.c`, `tests/movement_test.c`, `CMakeLists.txt`
+Owns: `common/physics.c`, `common/physics.h`, `client/player.c`, `tests/movement_test.c`, `CMakeLists.txt`
 Contract: `PHYSICS.md`
 
 Replace the frame-time gravity in `client/player.c` with the tick recurrence. Standing hitbox stays 0.6 by 1.8. Eye stays 1.62.
@@ -81,7 +81,7 @@ Out of scope: hunger, sprint cancel, water current, sneaking the hitbox down to 
 
 Status: TODO
 Blocked by: S02
-Owns: `game/block_props.c`, `game/block_props.h`, `tests/block_props_test.c`, `CMakeLists.txt`
+Owns: `common/block_props.c`, `common/block_props.h`, `tests/block_props_test.c`, `CMakeLists.txt`
 
 A table keyed by the string ids we already implement, plus air. Each row has solid, transparent, collision (full cube or none), hardness, blast resistance, light emission, friction, and drop id. `IsBlockSolid` and `IsBlockTransparent` read the table. Unknown ids are air.
 
@@ -97,7 +97,7 @@ Out of scope: mining time (S05), stairs (S09), generating ores.
 
 Status: TODO
 Blocked by: S03
-Owns: `game/item.c`, `game/item.h`, `client/player.c`, `tests/item_test.c`, `CMakeLists.txt`
+Owns: `common/item.c`, `common/item.h`, `client/player.c`, `tests/item_test.c`, `CMakeLists.txt`
 
 An item stack is a string id, a count, and a max count. Most ids stack to 64. `bucket` and `water_bucket` stack to 1 and are no longer `BlockType` values. The hotbar stores stacks. Place and pick-up use the stack. The creative grid may still list the cube blocks until S06.
 
@@ -112,7 +112,7 @@ Out of scope: the survival layout, tools, food.
 
 Status: TODO
 Blocked by: S02, S04
-Owns: `game/break.c`, `game/break.h`, `client/player.c`, `tests/break_test.c`, `CMakeLists.txt`
+Owns: `common/break.c`, `common/break.h`, `client/player.c`, `tests/break_test.c`, `CMakeLists.txt`
 
 Hold to break. Time comes from hardness in the S03 table and an empty hand. Dirt, stone, and oak log drop their item into the player inventory. Other cubes keep today's instant break until a later tool slice says otherwise. Reach is 4.5.
 
@@ -143,7 +143,7 @@ Out of scope: crafting grid (S18), armor slots.
 
 Status: TODO
 Blocked by: S03
-Owns: `game/light.c`, `game/light.h`, `client/voxel_renderer.c`, `tests/light_test.c`, `CMakeLists.txt`
+Owns: `common/light.c`, `common/light.h`, `client/voxel_renderer.c`, `tests/light_test.c`, `CMakeLists.txt`
 Contract: `WORLD.md`
 
 Sky light and block light, 0 through 15, stored per section cell once sections exist. Until S08, store them on the current 128-high chunk and rebuild in S08. Bake the max of the two channels into the mesh. Sunlight at noon on an open face is 15. Glowstone is 15. A solid cube blocks sky light.
@@ -176,7 +176,7 @@ Out of scope: the Nether, biomes, a new terrain generator.
 
 Status: TODO
 Blocked by: S08
-Owns: `game/block_state.c`, `game/block_state.h`, `client/voxel_renderer.c`, `client/player.c`, `tests/block_state_test.c`, `CMakeLists.txt`
+Owns: `common/block_state.c`, `common/block_state.h`, `client/voxel_renderer.c`, `client/player.c`, `tests/block_state_test.c`, `CMakeLists.txt`
 
 `oak_stairs` and `oak_door` store facing and the door's open bit. Collision is not a full cube. The mesher draws those two ids from their state. Placement faces the player. Every later stair copies this, rather than a new mesher path.
 
@@ -192,7 +192,7 @@ Out of scope: the other wood types, waterlogged state.
 
 Status: TODO
 Blocked by: S01, S09
-Owns: `client/water.c`, `client/water.h`, `game/fluid.c`, `tests/fluid_test.c`, `CMakeLists.txt`
+Owns: `client/water.c`, `client/water.h`, `common/fluid.c`, `tests/fluid_test.c`, `CMakeLists.txt`
 Contract: `PHYSICS.md`, `WORLD.md`
 
 Move water onto the 5-tick schedule without changing the seven-step rule or the two-source rule. Add lava: 30 ticks in the overworld, 10 ticks in the nether flag, shorter reach than water. Lava burns a player who stands in it, once health exists. Until S20, contact sets a flag the later slice reads.
@@ -209,7 +209,7 @@ Out of scope: buckets of lava (follow-up after this slice if the bucket path is 
 
 Status: TODO
 Blocked by: S07
-Owns: `game/clock.c`, `client/voxel_renderer.c`, `client/screen_gameplay.c`, `tests/clock_test.c`, `CMakeLists.txt`
+Owns: `common/clock.c`, `client/voxel_renderer.c`, `client/screen_gameplay.c`, `tests/clock_test.c`, `CMakeLists.txt`
 Contract: `WORLD.md`
 
 The overworld clock advances with the tick. Sky and fog move between the overworld colors. Night reduces baked sky light. The Nether and End flags exist on the clock and do not advance.
@@ -225,9 +225,9 @@ Out of scope: weather, a custom shader.
 
 Status: TODO
 Blocked by: S02, S04
-Owns: `client/voxel_types.h`, `game/` headers that still include raylib, `server/main.c`, `CMakeLists.txt`, `client/player.c` only for the include split
+Owns: `client/voxel_types.h`, `client/voxel_world.c`, `client/water.c`, `client/world_generation.c`, `client/world_save.c`, `client/player.c`, `server/main.c`, `CMakeLists.txt`
 
-`opencraft-server` loads a world directory, runs 20 ticks, flushes, and exits. It does not link raylib and does not open a socket. Shared headers stop including `raylib.h`. The client converts at the boundary.
+`common/` already builds `libopencraft_common` and the server already links it without raylib. NBT, region files, the chunk codec, and `level.dat` stay there. This slice moves the world off `raylib.h` in `client/voxel_types.h`. The server then loads a world directory, runs 20 ticks, flushes, and exits. It still does not open a socket.
 
 Done when:
 
@@ -318,7 +318,7 @@ Out of scope: skins, chat, collision between players. They may pass through each
 
 Status: TODO
 Blocked by: S06, S17
-Owns: `game/craft.c`, `game/craft.h`, `client/screen_gameplay.c`, `tests/craft_test.c`, `CMakeLists.txt`
+Owns: `common/craft.c`, `common/craft.h`, `client/screen_gameplay.c`, `tests/craft_test.c`, `CMakeLists.txt`
 
 2x2 in the inventory and 3x3 on `crafting_table`. Recipes: oak log to oak planks (4), planks to sticks (4), planks to a crafting table. The table UI opens when the player uses that block. Server and client share `craft.c`.
 
@@ -333,7 +333,7 @@ Out of scope: the rest of the recipe book (2,055 recipe ids). Add recipes in lat
 
 Status: TODO
 Blocked by: S05, S17
-Owns: `game/break.c`, `game/item.c`, `tests/break_test.c`, `game/craft.c`
+Owns: `common/break.c`, `common/item.c`, `tests/break_test.c`, `common/craft.c`
 
 Wooden pickaxe recipe from planks and sticks. Stone breaks faster with it than by hand and drops cobblestone. The empty hand no longer instant-breaks stone. Dirt still breaks by hand.
 
@@ -348,7 +348,7 @@ Out of scope: the other tiers and the other tools.
 
 Status: TODO
 Blocked by: S06, S17
-Owns: `game/hunger.c`, `game/hunger.h`, `client/player.c`, `client/screen_gameplay.c`, `tests/hunger_test.c`, `CMakeLists.txt`
+Owns: `common/hunger.c`, `common/hunger.h`, `client/player.c`, `client/screen_gameplay.c`, `tests/hunger_test.c`, `CMakeLists.txt`
 
 Food level starts at 20. Sprint is refused at 6 or below. Eating a cooked piece is out of scope until a food item exists. This slice adds `bread` as a craft from wheat only if wheat exists. If wheat does not exist, add a debug grant of one bread in the test and a single `bread` item that restores hunger. Do not add farming.
 
@@ -363,7 +363,7 @@ Out of scope: starvation damage, saturation details beyond "eating bread moves t
 
 Status: TODO
 Blocked by: S18
-Owns: `game/furnace.c`, `game/furnace.h`, `client/screen_gameplay.c`, `tests/furnace_test.c`, `CMakeLists.txt`
+Owns: `common/furnace.c`, `common/furnace.h`, `client/screen_gameplay.c`, `tests/furnace_test.c`, `CMakeLists.txt`
 
 `furnace` opens a three-slot UI. One recipe: raw iron is not in the game yet, so smelt `sand` into nothing? No. Smelt `oak_log` into `charcoal` and consume a plank as fuel. Lock that in the test. The block entity is stored on the chunk.
 
@@ -378,7 +378,7 @@ Out of scope: the rest of the smelting list.
 
 Status: TODO
 Blocked by: S06, S17
-Owns: `game/chest.c`, `game/chest.h`, `client/screen_gameplay.c`, `tests/chest_test.c`, `CMakeLists.txt`
+Owns: `common/chest.c`, `common/chest.h`, `client/screen_gameplay.c`, `tests/chest_test.c`, `CMakeLists.txt`
 
 `chest` opens 27 slots. Contents save with the chunk. Two players on a server see the same contents. A double chest is out of scope.
 
@@ -393,7 +393,7 @@ Out of scope: trapped chests, hoppers.
 
 Status: TODO
 Blocked by: S17
-Owns: `game/entity.c`, `game/entity.h`, `game/pig.c`, `client/voxel_renderer.c`, `tests/pig_test.c`, `CMakeLists.txt`
+Owns: `common/entity.c`, `common/entity.h`, `common/pig.c`, `client/voxel_renderer.c`, `tests/pig_test.c`, `CMakeLists.txt`
 
 One passive mob. It wanders, it has the pig hitbox from the Hitbox page (the test records the width and height it uses), and it replicates through the Entity packet with a kind field extended in this slice. Document the kind values in `SERVER.md` in this same PR. A player punch with an empty hand applies knockback. Drops wait for S24's damage helper if the pig dies. This slice can leave the pig unkilled.
 
@@ -409,7 +409,7 @@ Out of scope: breeding, saddles, other mobs.
 
 Status: TODO
 Blocked by: S07, S19, S23
-Owns: `game/zombie.c`, `game/health.c`, `tests/zombie_test.c`, `CMakeLists.txt`
+Owns: `common/zombie.c`, `common/health.c`, `tests/zombie_test.c`, `CMakeLists.txt`
 
 Zombies spawn on the surface when sky light is low, walk toward a player within follow range, and deal damage. The player has 20 health. Dying respawns at the spawn point and drops nothing in this slice.
 
@@ -439,7 +439,7 @@ Out of scope: rivers, temperature, the other 64 biomes, structures.
 
 Status: TODO
 Blocked by: S10, S25
-Owns: `game/dimension.c`, `client/world_generation.c`, `server/main.c`, `client/screen_gameplay.c`, `tests/nether_test.c`
+Owns: `common/dimension.c`, `client/world_generation.c`, `server/main.c`, `client/screen_gameplay.c`, `tests/nether_test.c`
 
 A nether dimension with the height and flags in `WORLD.md`. A lit obsidian portal moves the player, dividing x and z by 8. Water placed there evaporates. Lava uses the fast period. Return travel multiplies by 8.
 
@@ -454,7 +454,7 @@ Out of scope: nether fortresses, mobs, the full biome set.
 
 Status: TODO
 Blocked by: S26
-Owns: `game/dimension.c`, `client/world_generation.c`, `tests/end_test.c`
+Owns: `common/dimension.c`, `client/world_generation.c`, `tests/end_test.c`
 
 An end dimension with a stone island at the origin and the fixed clock from `WORLD.md`. No dragon, no end cities, no outer islands. The player gets there by a debug item or a test hook this slice documents in `SYSTEMS.md`. Do not pretend a complete end portal frame exists unless this slice actually builds one. Prefer the test hook and a single end-portal block that teleports, marked partial.
 

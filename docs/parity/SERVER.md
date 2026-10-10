@@ -5,10 +5,10 @@ The tree is three directories, not two.
 | Directory | What links it | Raylib |
 | --- | --- | --- |
 | `client/` | the game binary `mcc` | yes |
-| `game/` | `mcc` and `opencraft-server` | no |
+| `common/` | `mcc` and `opencraft-server` | no |
 | `server/` | `opencraft-server` only | no |
 
-`client/` is the old `src/` tree: screens, the renderer, input, and `resources/`. Launch the game from `client/` so those relative paths resolve. `game/` is empty until a slice moves shared code out of the client. The server does not include the client, and the client does not include `server/main.c`. Protocol code lands in `net/` in S13, and both binaries link that. It is not a fourth copy of the world.
+`client/` is the raylib program: screens, the renderer, input, world, fluids, and `resources/`. Launch it from `client/` so those relative paths resolve. `common/` is the static library both binaries link. It holds NBT, the region files, the chunk codec, and `level.dat`. World and player code stay in `client/` until `voxel_types.h` stops including `raylib.h`. The server does not include the client, and the client does not include `server/main.c`. Protocol code lands in `net/` in S13, and both binaries link that. It is not a fourth copy of the world.
 
 `server/main.c` builds today and exits. It does not open a socket and it does not tick a world. S12 replaces that stub.
 
