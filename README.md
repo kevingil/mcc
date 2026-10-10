@@ -8,6 +8,8 @@
 
 An open-world voxel game built with raylib, featuring open world gameplay with infinite terrain generation, block building, and first-person exploration. Built using a modular chunk system for efficient rendering and world management.
 
+The Java Edition parity tracker lives in `docs/parity/`. `docs/parity/SLICES.md` is the ordered work, and `docs/parity/AGENT.md` is how an agent session takes one slice.
+
 ### Features
 
  - **First-person 3D exploration** with smooth WASD movement and mouse look
@@ -79,7 +81,8 @@ cmake --build build
 ```
 
 - Inside the build folder are another folder (named the same as the project name on CMakeLists.txt) with the executable and resources folder.
-- In order for resources to load properly, cd to `src` and run the executable (`../build/${PROJECT_NAME}/${PROJECT_NAME}`) from there.
+- In order for resources to load properly, cd to `client` and run the executable (`../build/${PROJECT_NAME}/${PROJECT_NAME}`) from there.
+- The dedicated server binary is `build/server/opencraft-server`. It does not open a window.
 
 - cmake will automatically download a current release of raylib but if you want to use your local version you can pass `-DFETCHCONTENT_SOURCE_DIR_RAYLIB=<dir_with_raylib>`
 
@@ -93,4 +96,4 @@ bash .agents/build.sh
 bash .agents/test.sh
 ```
 
-`.agents/README.md` covers what each script does. The game still has to be launched from `src/` so it can find `resources/`. 
+`.agents/README.md` covers what each script does. The game still has to be launched from `client/` so it can find `resources/`. 

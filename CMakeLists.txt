@@ -29,8 +29,11 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(raylib)
 
 # Our Project
+find_package(ZLIB REQUIRED)
+add_subdirectory(common)
+
 add_executable(${PROJECT_NAME})
-add_subdirectory(src)
+add_subdirectory(client)
 
 set_target_properties(${PROJECT_NAME} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/${PROJECT_NAME})
@@ -40,31 +43,31 @@ set_property(TARGET ${PROJECT_NAME} PROPERTY VS_DEBUGGER_WORKING_DIRECTORY $<TAR
 if ("${PLATFORM}" STREQUAL "Web")
     add_custom_command(
         TARGET ${PROJECT_NAME} PRE_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/src/resources $<TARGET_FILE_DIR:${PROJECT_NAME}>/../resources
+        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/client/resources $<TARGET_FILE_DIR:${PROJECT_NAME}>/../resources
     )
     #DEPENDS ${PROJECT_NAME}
 else()
     add_custom_command(
         TARGET ${PROJECT_NAME} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/src/resources $<TARGET_FILE_DIR:${PROJECT_NAME}>/resources
+        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/client/resources $<TARGET_FILE_DIR:${PROJECT_NAME}>/resources
     )
     #DEPENDS ${PROJECT_NAME}
 endif()
 
 #set(raylib_VERBOSE 1)
-find_package(ZLIB REQUIRED)
-target_link_libraries(${PROJECT_NAME} raylib ZLIB::ZLIB)
+target_link_libraries(${PROJECT_NAME} opencraft_common raylib)
 
 add_executable(save_format_test
     tests/save_format_test.c
-    src/nbt.c
-    src/chunk_codec.c
-    src/anvil.c
-    src/level_data.c
-    src/client_log.c
+    client/client_log.c
 )
-target_include_directories(save_format_test PRIVATE src)
-target_link_libraries(save_format_test ZLIB::ZLIB)
+target_include_directories(save_format_test PRIVATE client)
+target_link_libraries(save_format_test opencraft_common)
+
+add_executable(opencraft-server server/main.c)
+target_link_libraries(opencraft-server PRIVATE opencraft_common)
+set_target_properties(opencraft-server PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/server)
 
 # Web Configurations
 if ("${PLATFORM}" STREQUAL "Web")
