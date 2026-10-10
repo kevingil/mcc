@@ -6,13 +6,15 @@ Sources for the numbers: the Java Edition pages [Player](https://minecraft.wiki/
 
 ## Tick
 
-Java Edition steps at 20 Hz. OpenCraft steps at 64 Hz. One sim tick is 1/64 second (15.625 ms). The client may render faster than that. It accumulates frame time, runs zero or more sim ticks, then draws once. Clamp the backlog so a stall cannot simulate hundreds of ticks. A headless test steps ticks with no window and no dependency on frame time.
+The simulation is 20 Hz. One tick is 1/20 second. Java Edition does not run a faster loop and scale the results down. Gravity `0.08`, jump `0.42`, walk acceleration `0.098`, and "water every 5 ticks" are applied once per that tick. OpenCraft uses the same clock. The formulas below are already in sim ticks.
 
-A subtick is a fraction in `[0, 1)` inside the current sim tick. Inputs, hits, and block edits carry that fraction. The tick applies them in subtick order: advance the sim to the fraction, resolve the event, continue. Subtick does not add a second clock and it is not a variable timestep. Two events in one tick have an order.
+The client renders as fast as the display allows. After the ticks for a frame have run, the leftover fraction of the next tick is the partial tick. Drawing uses it to interpolate positions between the last two ticks. Collision, damage, and block updates do not. That is the same split Java uses: `partialTick` is a render value.
 
-The formulas below (gravity `0.08`, jump `0.42`, walk acceleration `0.098`, water every 5 ticks) are Java ticks, each 1/20 second. Do not apply them once per 64 Hz step. Scale the step so one second of OpenCraft ticks matches one second of that recurrence. The acceptance numbers are blocks per second and the jump apex, not "0.08 per sim tick." Five Java ticks of water spread is 16 sim ticks.
+A subtick is a separate field, also a fraction in `[0, 1)`, stored on an input, a hit, or a block edit. S01 records it. Movement, fluids, and combat in the current slices still resolve on the tick boundary, matching Java. A later slice may use the stored fraction for collision damage or hit order. Until that slice exists, nothing in the sim reads the field.
 
-The world clock stays a Minecraft day: 24,000 Java ticks, 20 real minutes. Each sim tick advances that clock by `20/64`. Redstone and fluids schedule off this same conversion. They do not get their own clock.
+The client accumulates frame time, runs zero or more ticks, then draws once. Clamp the backlog so a stall cannot simulate hundreds of ticks. A headless test steps ticks with no window and no dependency on frame time.
+
+A day is 24,000 ticks, 20 real minutes. Redstone and fluids schedule on this same clock.
 
 ## Player body
 

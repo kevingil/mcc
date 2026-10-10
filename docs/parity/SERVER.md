@@ -24,7 +24,7 @@ Runtime:
 
 - Bind `0.0.0.0` and the port from `--port`, or from `PORT` when that variable is set. Default port is 25570, not 25565.
 - World directory from `--world`, default `world`. The layout matches the client: `level.dat`, `region/`, and the menu index is not required.
-- Tick at 64 Hz on the sim thread. The socket thread only queues packets. See `PHYSICS.md` for subtick.
+- Tick at 20 Hz on the sim thread. The socket thread only queues packets. See `PHYSICS.md` for the partial tick and the stored subtick.
 - Log to stdout. A VPS supervisor collects it.
 - Stop on SIGTERM after flushing the world.
 
@@ -67,26 +67,29 @@ Prediction and interpolation are not in the direct-connect slice. The client dra
 
 One process. Two listeners. The language stays C.
 
-The simulation is a function in `common/`: `Tick` takes the world and the ordered inputs and returns the next world. The client calls it from the raylib frame. The server calls it from the sim thread at 64 Hz. That function is synchronous. Events inside it are ordered by subtick. Chunks may later be stepped in parallel, and the tick does not finish until those jobs join. Turning entity updates into callbacks would drop that shared function, and the client could not run the same code.
+The simulation is a function in `common/`: `Tick` takes the world and the inputs and returns the next world. The client calls it from the raylib frame. The server calls it from the sim thread at 20 Hz. That function is synchronous. Chunks may later be stepped in parallel, and the tick does not finish until those jobs join. Callbacks inside entity movement would drop the function the client shares.
 
-Async is the I/O around the tick. HTTP, outbound requests, and the database do not run inside `Tick`. They complete onto a queue. The next tick applies the results in subtick order.
+Async is everything around that function. HTTP handlers, outbound requests, and database calls do not run inside `Tick`, and they do not block a Kore worker. High-performance code in the web routes means the worker submits work and resumes on completion.
 
-Kore (ISC) is the HTTP server. It owns routes, the request lifecycle, and the async outbound HTTP client through its libcurl integration. It does not own the simulation. The sim thread starts before Kore's loop and keeps running while Kore serves HTTP. Kore's async PostgreSQL API is not used.
+Kore (ISC) is the HTTP server. It owns routes, the request lifecycle, and the async outbound HTTP client through its libcurl integration. It does not own the simulation. The sim thread starts before Kore's loop and keeps running while Kore serves HTTP.
+
+SQLite cannot make `sqlite3_step` nonblocking. The official API reads and writes on the calling thread. Wrappers that return a future still run `sqlite3_step` on a worker. A true async SQLite, with the bytecode waiting on I/O, does not exist in the library we link. We do not invent one. The caller-facing API is still asynchronous: `common/db` takes a query and a completion. The SQLite backend runs `sqlite3_step` on one writer thread and posts the completion back to Kore. WAL mode lets a reader connection proceed beside the writer. The HTTP worker never calls `sqlite3_step` itself.
+
+That completion API is the seam for a later Postgres backend. Routes and `Tick` keep calling `common/db`. A Postgres implementation can use Kore's async driver behind the same completion. `opencraft.db` and sqlite-vec stay the storage until that backend exists. Switching storage is a new slice, not a flag sprinkled through the routes.
 
 | Piece | Choice |
 | --- | --- |
 | Process | `opencraft-server` only. The sim, game packets, and HTTP share it. |
 | Game port | TCP 25570. Players, chunks, blocks. |
 | HTTP port | TCP 8080. Health and JSON routes. Kore. |
-| Database | One SQLite file, `opencraft.db`, in the world directory. Accounts, server rows, and later feature tables go here. Not a second database per feature. |
+| Database | One SQLite file, `opencraft.db`, in the world directory. Accounts, server rows, and later feature tables go here. |
 | Vectors | Load [sqlite-vec](https://github.com/asg017/sqlite-vec) when the file is opened. No vector table until a feature stores embeddings. |
-| SQL access | `common/db`. The same types and queries for the client and the server. |
-| Writer | One database thread. SQLite has one writer. Callers submit a request and get a completion. `Tick` never calls `sqlite3_step`. |
+| SQL access | `common/db`. Same types and the same completion API for the client and the server. |
+| SQLite thread | One writer. Callers submit and complete. `Tick` and Kore workers never call `sqlite3_step`. |
+| Later Postgres | A second backend behind `common/db`. Not the current storage. |
 | Passwords | A real password hash when account rows land. No plaintext column. |
 
-PostgreSQL would match Kore's built-in async driver and would throw away the single file and sqlite-vec. Stay on `opencraft.db`.
-
-`common/` holds the row types and the query functions. It does not include Kore, libcurl, or raylib. `server/` holds the Kore routes and the queues. Singleplayer calls `common/db` on its own thread, with no HTTP server in the client.
+`common/` holds the row types, the query functions, and the completion API. It does not include Kore, libcurl, or raylib. `server/` holds the Kore routes and the queues. Singleplayer calls the same `common/db` API. The SQLite backend may run the completion inline when there is no HTTP loop.
 
 A second process is the right split only when several world servers must share one `opencraft.db`. That is not this deploy. One VPS runs one binary and one world directory.
 
