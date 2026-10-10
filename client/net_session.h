@@ -11,6 +11,11 @@ const char *NetSessionStatus(void);
 const char *NetSessionName(void);
 unsigned NetSessionSeed(void);
 const char *NetSessionEditLine(void);
+int NetSessionHasPose(void);
+int NetSessionSpawnSlot(void);
+void NetSessionWelcomePose(float *x, float *y, float *z, float *yaw, float *pitch);
+int NetSessionLookBlock(int *x, int *y, int *z, int *block);
+void NetSessionSyncPose(const Player *player);
 
 int NetSessionCreateAccount(const char *host, int port, const char *user, const char *pass, const char *email);
 int NetSessionLogin(const char *host, int port, const char *user, const char *pass);

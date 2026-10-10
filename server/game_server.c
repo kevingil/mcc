@@ -35,6 +35,12 @@ typedef struct {
     int fd;
     int phase;
     unsigned accountId;
+    int hasPose;
+    float px;
+    float py;
+    float pz;
+    float yaw;
+    float pitch;
     char name[OC_NAME_MAX + 1];
     unsigned char buf[RECV_CAP];
     int len;
@@ -122,6 +128,68 @@ static int BroadcastBlock(GameServer *server, int x, int y, int z, unsigned bloc
     return 1;
 }
 
+static void WelcomePose(GameServer *server, Conn *conn, float *x, float *y, float *z, float *yaw, float *pitch)
+{
+    int has = 0;
+    int others = 0;
+    int i = 0;
+    float px = 0.0f;
+    float py = -1.0f;
+    float pz = 0.0f;
+    float pyaw = 0.0f;
+    float ppitch = 0.0f;
+
+    has = OcDbLoadPose(&server->db, conn->accountId, &px, &py, &pz, &pyaw, &ppitch);
+    for (i = 0; i < MAX_CLIENTS; i++)
+    {
+        Conn *other = &server->clients[i];
+
+        if (other == conn) continue;
+        if ((other->fd < 0) || (other->phase != PHASE_WORLD)) continue;
+        others++;
+    }
+    if (!has)
+    {
+        *x = (float)others;
+        *y = -1.0f;
+        *z = 0.0f;
+        *yaw = 0.0f;
+        *pitch = 0.0f;
+        conn->hasPose = 0;
+        return;
+    }
+    for (i = 0; i < MAX_CLIENTS; i++)
+    {
+        Conn *other = &server->clients[i];
+        int guard = 0;
+        float dx = 0.0f;
+        float dz = 0.0f;
+
+        if (other == conn) continue;
+        if ((other->fd < 0) || (other->phase != PHASE_WORLD) || !other->hasPose) continue;
+        dx = px - other->px;
+        dz = pz - other->pz;
+        while (((dx*dx) + (dz*dz) < 2.25f) && (guard < 6))
+        {
+            px += 2.2f;
+            dx = px - other->px;
+            dz = pz - other->pz;
+            guard++;
+        }
+    }
+    *x = px;
+    *y = py;
+    *z = pz;
+    *yaw = pyaw;
+    *pitch = ppitch;
+    conn->hasPose = 1;
+    conn->px = px;
+    conn->py = py;
+    conn->pz = pz;
+    conn->yaw = pyaw;
+    conn->pitch = ppitch;
+}
+
 static int SendWelcomePack(GameServer *server, Conn *conn)
 {
     OcProfile profile;
@@ -153,7 +221,16 @@ static int SendWelcomePack(GameServer *server, Conn *conn)
         return 0;
     }
 
-    n = ProtoBuildWelcome(welcome, (int)sizeof(welcome), conn->accountId, (int)OcDbSeed(&server->db), 0.0f, 80.0f, 0.0f, 0.0f, 0.0f);
+    {
+        float wx = 0.0f;
+        float wy = -1.0f;
+        float wz = 0.0f;
+        float wyaw = 0.0f;
+        float wpitch = 0.0f;
+
+        WelcomePose(server, conn, &wx, &wy, &wz, &wyaw, &wpitch);
+        n = ProtoBuildWelcome(welcome, (int)sizeof(welcome), conn->accountId, (int)OcDbSeed(&server->db), wx, wy, wz, wyaw, wpitch);
+    }
     if ((n < 0) || !WireSendAll(conn->fd, welcome, n))
     {
         free(edits);
@@ -349,6 +426,37 @@ static void HandlePacket(GameServer *server, Conn *conn, const unsigned char *pa
         }
         printf("inventory %s slot %d held %u\n", conn->name, profile.selectedSlot, profile.hotbar[profile.selectedSlot]);
         fflush(stdout);
+        return;
+    }
+
+    if (id == OC_C2S_POSE)
+    {
+        float px = 0.0f;
+        float py = 0.0f;
+        float pz = 0.0f;
+        float pyaw = 0.0f;
+        float ppitch = 0.0f;
+
+        if (conn->phase != PHASE_WORLD)
+        {
+            Drop(conn, OC_REJECT_AUTH, "Join the world first");
+            return;
+        }
+        if (!ProtoParsePose(payload, len, &px, &py, &pz, &pyaw, &ppitch))
+        {
+            Drop(conn, OC_REJECT_INTERNAL, "Bad pose packet");
+            return;
+        }
+        conn->hasPose = 1;
+        conn->px = px;
+        conn->py = py;
+        conn->pz = pz;
+        conn->yaw = pyaw;
+        conn->pitch = ppitch;
+        if (!OcDbSavePose(&server->db, conn->accountId, px, py, pz, pyaw, ppitch))
+        {
+            Drop(conn, OC_REJECT_INTERNAL, "Could not store the position");
+        }
         return;
     }
 

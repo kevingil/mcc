@@ -34,5 +34,7 @@ int OcDbSaveProfile(OcDb *db, const OcProfile *profile);
 int OcDbLoadProfile(OcDb *db, unsigned accountId, OcProfile *out);
 int OcDbPutBlock(OcDb *db, int x, int y, int z, unsigned block);
 int OcDbLoadEdits(OcDb *db, OcEdit *edits, int cap, int *count);
+int OcDbSavePose(OcDb *db, unsigned accountId, float x, float y, float z, float yaw, float pitch);
+int OcDbLoadPose(OcDb *db, unsigned accountId, float *x, float *y, float *z, float *yaw, float *pitch);
 
 #endif

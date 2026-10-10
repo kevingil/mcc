@@ -9,6 +9,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <math.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <stdio.h>
@@ -134,6 +135,12 @@ static void CloseClient(TestClient *client)
     client->fd = -1;
 }
 
+static float welcomeX = 0.0f;
+static float welcomeY = 0.0f;
+static float welcomeZ = 0.0f;
+static float welcomeYaw = 0.0f;
+static float welcomePitch = 0.0f;
+
 static int Join(TestClient *client, OcProfile *profile, OcEdit *edits, int *editCount, int *seed)
 {
     unsigned char frame[32];
@@ -157,6 +164,11 @@ static int Join(TestClient *client, OcProfile *profile, OcEdit *edits, int *edit
         if (id == OC_S2C_WELCOME)
         {
             if (!ProtoParseWelcome(client->payload, client->payloadLen, &accountId, seed, &x, &y, &z, &yaw, &pitch)) return 0;
+            welcomeX = x;
+            welcomeY = y;
+            welcomeZ = z;
+            welcomeYaw = yaw;
+            welcomePitch = pitch;
             gotWelcome = 1;
         }
         else if (id == OC_S2C_INVENTORY)
@@ -363,6 +375,36 @@ int main(void)
     Expect(profile.selectedSlot == 0, "bob slot unchanged");
     Expect(profile.hotbar[0] == OC_BLOCK_GRASS, "bob hotbar unchanged");
     Expect(FindEdit(edits, editCount, 4, 80, 4) == OC_BLOCK_DIAMOND_BLOCK, "bob still sees the diamond");
+
+    CloseClient(&alice);
+    CloseClient(&bob);
+    usleep(100000);
+
+    Expect(OpenClient(&alice, GameServerPort(server), "alice", "secret-pass", "", 0) == 1, "alice pose login");
+    editCount = 0;
+    Expect(Join(&alice, &profile, edits, &editCount, &seedA) == 1, "alice pose join");
+    n = ProtoBuildPose(frame, (int)sizeof(frame), 8.0f, 64.0f, 12.0f, 0.4f, -0.25f);
+    Expect((n > 0) && SendFrame(&alice, frame, n), "alice saves pose");
+    usleep(100000);
+    CloseClient(&alice);
+    usleep(80000);
+    Expect(OpenClient(&alice, GameServerPort(server), "alice", "secret-pass", "", 0) == 1, "alice pose rejoin login");
+    Expect(Join(&alice, &profile, edits, &editCount, &seedA) == 1, "alice pose rejoin");
+    Expect(fabsf(welcomeX - 8.0f) < 0.2f, "alice pose x persisted");
+    Expect(fabsf(welcomeY - 64.0f) < 0.2f, "alice pose y persisted");
+    Expect(fabsf(welcomeZ - 12.0f) < 0.2f, "alice pose z persisted");
+    Expect(fabsf(welcomeYaw - 0.4f) < 0.05f, "alice look persisted");
+
+    Expect(OpenClient(&bob, GameServerPort(server), "bob", "bob-secret", "", 0) == 1, "bob pose login");
+    Expect(Join(&bob, &profile, edits, &editCount, &seedB) == 1, "bob pose join");
+    n = ProtoBuildPose(frame, (int)sizeof(frame), 8.0f, 64.0f, 12.0f, 0.4f, -0.25f);
+    Expect((n > 0) && SendFrame(&bob, frame, n), "bob saves the same pose");
+    usleep(100000);
+    CloseClient(&bob);
+    usleep(80000);
+    Expect(OpenClient(&bob, GameServerPort(server), "bob", "bob-secret", "", 0) == 1, "bob overlap login");
+    Expect(Join(&bob, &profile, edits, &editCount, &seedB) == 1, "bob overlap join");
+    Expect(((welcomeX - 8.0f)*(welcomeX - 8.0f) + (welcomeZ - 12.0f)*(welcomeZ - 12.0f)) > 2.0f, "bob is not spawned inside alice");
 
     CloseClient(&alice);
     CloseClient(&bob);

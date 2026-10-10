@@ -25,7 +25,9 @@
 #include "world_catalog.h"
 #include "world_save.h"
 #include "net_session.h"
+#include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 //----------------------------------------------------------------------------------
 // Module Variables Definition (local)
@@ -44,6 +46,156 @@ static Player player;
 static bool gameInitialized = false;
 static double nextWorldSave = 0.0;
 static bool savedWhilePaused = false;
+static int aimLock = 0;
+static int aimX = 0;
+static int aimY = 0;
+static int aimZ = 0;
+
+static int ColumnStandY(VoxelWorld *ground, int x, int z, int *standY)
+{
+    int y = 0;
+
+    for (y = WORLD_HEIGHT - 3; y >= 1; y--)
+    {
+        BlockPos below = { x, y - 1, z };
+        BlockPos feet = { x, y, z };
+        BlockPos head = { x, y + 1, z };
+
+        if (!IsBlockSolid(GetBlock(ground, below))) continue;
+        if (IsBlockSolid(GetBlock(ground, feet))) continue;
+        if (IsBlockSolid(GetBlock(ground, head))) continue;
+        *standY = y;
+        return 1;
+    }
+    return 0;
+}
+
+static void FaceBlock(Player *body, int bx, int by, int bz)
+{
+    float dx = (bx + 0.5f) - body->position.x;
+    float dz = (bz + 0.5f) - body->position.z;
+    float dy = (by + 0.45f) - (body->position.y + 1.62f);
+    float horiz = sqrtf((dx*dx) + (dz*dz));
+    float yaw = atan2f(dx, dz);
+    float pitch = atan2f(dy, (horiz < 0.05f) ? 0.05f : horiz);
+
+    SetPlayerLook(body, yaw, pitch);
+}
+
+static void StandOnColumn(Player *body, VoxelWorld *ground, int x, int z, float yaw, float pitch)
+{
+    int standY = WATER_LEVEL + 1;
+    int radius = 0;
+
+    for (radius = 0; radius <= 4; radius++)
+    {
+        int dx = 0;
+        int dz = 0;
+        int found = 0;
+        int bestX = x;
+        int bestZ = z;
+        int bestY = standY;
+        float bestScore = 1000000.0f;
+
+        for (dx = -radius; dx <= radius; dx++)
+        {
+            for (dz = -radius; dz <= radius; dz++)
+            {
+                int y = 0;
+                float score = 0.0f;
+
+                if ((radius > 0) && (abs(dx) != radius) && (abs(dz) != radius)) continue;
+                if (!ColumnStandY(ground, x + dx, z + dz, &y)) continue;
+                if (y <= WATER_LEVEL) continue;
+                score = fabsf((float)dx) + fabsf((float)dz);
+                if (score < bestScore)
+                {
+                    found = 1;
+                    bestScore = score;
+                    bestX = x + dx;
+                    bestZ = z + dz;
+                    bestY = y;
+                }
+            }
+        }
+        if (found)
+        {
+            body->position.x = bestX + 0.5f;
+            body->position.y = (float)bestY;
+            body->position.z = bestZ + 0.5f;
+            body->velocity = (Vector3){ 0.0f, 0.0f, 0.0f };
+            body->onGround = true;
+            SetPlayerLook(body, yaw, pitch);
+            return;
+        }
+    }
+    body->position.y = (float)standY;
+    body->velocity = (Vector3){ 0.0f, 0.0f, 0.0f };
+    body->onGround = true;
+    SetPlayerLook(body, yaw, pitch);
+}
+
+static void StandFacingBlock(Player *body, VoxelWorld *ground, int bx, int by, int bz, float preferX, float preferZ)
+{
+    int radius = 0;
+    int found = 0;
+    int bestX = (int)floorf(preferX);
+    int bestZ = (int)floorf(preferZ);
+    int bestY = WATER_LEVEL + 2;
+    float bestScore = 1000000.0f;
+
+    for (radius = 0; radius <= 5; radius++)
+    {
+        int dx = 0;
+        int dz = 0;
+
+        for (dx = -radius; dx <= radius; dx++)
+        {
+            for (dz = -radius; dz <= radius; dz++)
+            {
+                int x = bx + dx;
+                int z = bz + dz;
+                int y = 0;
+                float dist = 0.0f;
+                float prefer = 0.0f;
+                float score = 0.0f;
+
+                if ((radius > 0) && (abs(dx) != radius) && (abs(dz) != radius)) continue;
+                if (!ColumnStandY(ground, x, z, &y)) continue;
+                if (y <= WATER_LEVEL) continue;
+                dist = sqrtf(((x + 0.5f) - (bx + 0.5f))*((x + 0.5f) - (bx + 0.5f)) + ((z + 0.5f) - (bz + 0.5f))*((z + 0.5f) - (bz + 0.5f)));
+                if ((dist < 1.6f) || (dist > 4.8f)) continue;
+                prefer = hypotf((x + 0.5f) - preferX, (z + 0.5f) - preferZ);
+                score = fabsf(dist - 2.6f) + (0.2f*prefer);
+                if (!found || (score < bestScore))
+                {
+                    found = 1;
+                    bestScore = score;
+                    bestX = x;
+                    bestZ = z;
+                    bestY = y;
+                }
+            }
+        }
+    }
+    if (!found)
+    {
+        StandOnColumn(body, ground, bestX, bestZ, 0.0f, -0.4f);
+    }
+    else
+    {
+        body->position.x = bestX + 0.5f;
+        body->position.y = (float)bestY;
+        body->position.z = bestZ + 0.5f;
+        body->velocity = (Vector3){ 0.0f, 0.0f, 0.0f };
+        body->onGround = true;
+    }
+    FaceBlock(body, bx, by, bz);
+    aimX = bx;
+    aimY = by;
+    aimZ = bz;
+    aimLock = 180;
+}
 
 //----------------------------------------------------------------------------------
 // Local Functions Declaration
@@ -82,24 +234,62 @@ void InitGameplayScreen(void)
 
         Vector3 shore = { 0.0f, 0.0f, 0.0f };
         float shoreYaw = 0.0f;
+        float shorePitch = -0.45f;
         bool onShore = false;
+        int lookX = 0;
+        int lookY = 0;
+        int lookZ = 0;
+        int lookBlock = 0;
+        int haveLook = 0;
 
+        aimLock = 0;
         startPosition = (Vector3){ 0.0f, GetSurfaceLevel(0, 0), 0.0f };
         if (!online && !WorldSaveHasPlayer()) onShore = FindShoreSpawn(&shore, &shoreYaw);
-        if (online) onShore = FindShoreSpawn(&shore, &shoreYaw);
+        if (online && !NetSessionHasPose()) onShore = FindShoreSpawn(&shore, &shoreYaw);
+        if (online && NetSessionHasPose())
+        {
+            float px = 0.0f;
+            float py = 0.0f;
+            float pz = 0.0f;
+
+            NetSessionWelcomePose(&px, &py, &pz, &shoreYaw, &shorePitch);
+            shore.x = px;
+            shore.y = py;
+            shore.z = pz;
+            onShore = true;
+        }
         if (onShore) startPosition = shore;
+        if (online && !NetSessionHasPose())
+        {
+            float side = cosf(shoreYaw);
+            float forward = -sinf(shoreYaw);
+            int slot = NetSessionSpawnSlot();
+
+            startPosition.x += slot*2.2f*side;
+            startPosition.z += slot*2.2f*forward;
+        }
         if (!online && WorldSaveHasPlayer()) startPosition = WorldSavePlayerPosition();
         else if (!online) WorldSaveSetSpawn((int)startPosition.x, (int)startPosition.y, (int)startPosition.z);
 
         InitPlayer(&player, startPosition);
         if (online) NetSessionApplySpawnInventory(&player);
         else WorldSaveApplyPlayer(&player);
-        if (onShore) SetPlayerLook(&player, shoreYaw, -0.45f);
+        if (onShore) SetPlayerLook(&player, shoreYaw, shorePitch);
 
         // Load initial chunks near spawn BEFORE player physics start
         // otherwise player will fall through the world forever
         LoadChunksAroundPlayer(&world, player.position);
         if (online) NetSessionOverlayEdits(&world);
+        if (online)
+        {
+            haveLook = NetSessionLookBlock(&lookX, &lookY, &lookZ, &lookBlock);
+            if (haveLook) StandFacingBlock(&player, &world, lookX, lookY, lookZ, player.position.x, player.position.z);
+            else StandOnColumn(&player, &world, (int)floorf(player.position.x), (int)floorf(player.position.z), player.yaw, player.pitch);
+            LoadChunksAroundPlayer(&world, player.position);
+            NetSessionOverlayEdits(&world);
+            if (haveLook) StandFacingBlock(&player, &world, lookX, lookY, lookZ, player.position.x, player.position.z);
+            NetSessionSyncPose(&player);
+        }
         nextWorldSave = GetTime() + 20.0;
         savedWhilePaused = false;
         
@@ -195,7 +385,13 @@ void UpdateGameplayScreen(void)
         {
             NetSessionPoll(&world);
             NetSessionOverlayEdits(&world);
+            if (aimLock > 0)
+            {
+                FaceBlock(&player, aimX, aimY, aimZ);
+                aimLock--;
+            }
             NetSessionSyncInventory(&player);
+            NetSessionSyncPose(&player);
         }
         
         // Exit to menu (alternative method - keeping ENTER as backup)

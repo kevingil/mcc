@@ -21,6 +21,7 @@
 #define OC_C2S_BLOCK 6
 #define OC_C2S_INVENTORY 7
 #define OC_C2S_DISCONNECT 8
+#define OC_C2S_POSE 9
 
 #define OC_S2C_WELCOME 1
 #define OC_S2C_CHUNK 2
@@ -99,6 +100,7 @@ int ProtoBuildJoin(unsigned char *out, int cap);
 int ProtoBuildBlock(unsigned char *out, int cap, unsigned packetId, int x, int y, int z, unsigned block);
 int ProtoBuildInventory(unsigned char *out, int cap, unsigned packetId, const OcProfile *profile);
 int ProtoBuildDisconnect(unsigned char *out, int cap);
+int ProtoBuildPose(unsigned char *out, int cap, float x, float y, float z, float yaw, float pitch);
 int ProtoBuildReject(unsigned char *out, int cap, unsigned code, const char *text);
 int ProtoBuildAuthOk(unsigned char *out, int cap, unsigned packetId, unsigned accountId, const char *name);
 int ProtoBuildWelcome(unsigned char *out, int cap, unsigned accountId, int seed, float x, float y, float z, float yaw, float pitch);
@@ -108,6 +110,7 @@ int ProtoParseHello(const unsigned char *payload, int len, unsigned *protocol);
 int ProtoParseRegister(const unsigned char *payload, int len, char *user, char *pass, char *email);
 int ProtoParseLogin(const unsigned char *payload, int len, char *user, char *pass);
 int ProtoParseBlock(const unsigned char *payload, int len, int *x, int *y, int *z, unsigned *block);
+int ProtoParsePose(const unsigned char *payload, int len, float *x, float *y, float *z, float *yaw, float *pitch);
 int ProtoParseInventory(const unsigned char *payload, int len, OcProfile *profile);
 int ProtoParseReject(const unsigned char *payload, int len, unsigned *code, char *text, int textCap);
 int ProtoParseAuthOk(const unsigned char *payload, int len, unsigned *accountId, char *name, int nameCap);

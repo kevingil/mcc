@@ -345,6 +345,18 @@ int ProtoBuildDisconnect(unsigned char *out, int cap)
     return ProtoFrame(out, cap, OC_C2S_DISCONNECT, NULL, 0);
 }
 
+int ProtoBuildPose(unsigned char *out, int cap, float x, float y, float z, float yaw, float pitch)
+{
+    unsigned char body[20];
+
+    PutF32(body, x);
+    PutF32(body + 4, y);
+    PutF32(body + 8, z);
+    PutF32(body + 12, yaw);
+    PutF32(body + 16, pitch);
+    return ProtoFrame(out, cap, OC_C2S_POSE, body, 20);
+}
+
 int ProtoBuildReject(unsigned char *out, int cap, unsigned code, const char *text)
 {
     unsigned char body[2 + OC_TEXT_MAX];
@@ -462,6 +474,19 @@ int ProtoParseBlock(const unsigned char *payload, int len, int *x, int *y, int *
     if (!ReadI32(&reader, y)) return 0;
     if (!ReadI32(&reader, z)) return 0;
     if (!ReadU16(&reader, block)) return 0;
+    return reader.pos == reader.size;
+}
+
+int ProtoParsePose(const unsigned char *payload, int len, float *x, float *y, float *z, float *yaw, float *pitch)
+{
+    ProtoReader reader = { 0 };
+
+    if (!ExpectId(payload, len, OC_C2S_POSE, &reader)) return 0;
+    if (!ReadF32(&reader, x)) return 0;
+    if (!ReadF32(&reader, y)) return 0;
+    if (!ReadF32(&reader, z)) return 0;
+    if (!ReadF32(&reader, yaw)) return 0;
+    if (!ReadF32(&reader, pitch)) return 0;
     return reader.pos == reader.size;
 }
 

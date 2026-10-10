@@ -32,6 +32,14 @@ static int authed = 0;
 static int inWorld = 0;
 static int applying = 0;
 static unsigned worldSeed = 0;
+static int hasPose = 0;
+static int spawnSlot = 0;
+static float poseX = 0.0f;
+static float poseY = -1.0f;
+static float poseZ = 0.0f;
+static float poseYaw = 0.0f;
+static float posePitch = 0.0f;
+static uint64_t nextPoseMs = 0;
 static char status[160];
 static char editLine[160];
 static unsigned char recvBuf[1024*1024];
@@ -96,6 +104,41 @@ const char *NetSessionName(void)
 unsigned NetSessionSeed(void)
 {
     return worldSeed;
+}
+
+int NetSessionHasPose(void)
+{
+    return hasPose;
+}
+
+int NetSessionSpawnSlot(void)
+{
+    return spawnSlot;
+}
+
+void NetSessionWelcomePose(float *x, float *y, float *z, float *yaw, float *pitch)
+{
+    if (x != NULL) *x = poseX;
+    if (y != NULL) *y = poseY;
+    if (z != NULL) *z = poseZ;
+    if (yaw != NULL) *yaw = poseYaw;
+    if (pitch != NULL) *pitch = posePitch;
+}
+
+int NetSessionLookBlock(int *x, int *y, int *z, int *block)
+{
+    int i = 0;
+
+    for (i = editCount - 1; i >= 0; i--)
+    {
+        if (edits[i].block == OC_BLOCK_AIR) continue;
+        if (x != NULL) *x = edits[i].x;
+        if (y != NULL) *y = edits[i].y;
+        if (z != NULL) *z = edits[i].z;
+        if (block != NULL) *block = (int)edits[i].block;
+        return 1;
+    }
+    return 0;
 }
 
 const char *NetSessionEditLine(void)
@@ -470,6 +513,14 @@ int NetSessionJoinWorld(void)
                 return 0;
             }
             worldSeed = (unsigned)seed;
+            poseX = x;
+            poseY = y;
+            poseZ = z;
+            poseYaw = yaw;
+            posePitch = pitch;
+            hasPose = (y >= 0.0f);
+            spawnSlot = hasPose ? 0 : (int)x;
+            if (spawnSlot < 0) spawnSlot = 0;
             gotWelcome = 1;
         }
         else if (id == OC_S2C_INVENTORY)
@@ -494,9 +545,15 @@ int NetSessionJoinWorld(void)
         }
     }
     inWorld = 1;
-    if (editCount > 0)
+    nextPoseMs = 0;
     {
-        NoteEdit(edits[editCount - 1].x, edits[editCount - 1].y, edits[editCount - 1].z, edits[editCount - 1].block);
+        int lx = 0;
+        int ly = 0;
+        int lz = 0;
+        int lblock = 0;
+
+        if (NetSessionLookBlock(&lx, &ly, &lz, &lblock)) NoteEdit(lx, ly, lz, (unsigned)lblock);
+        else if (editCount > 0) NoteEdit(edits[editCount - 1].x, edits[editCount - 1].y, edits[editCount - 1].z, edits[editCount - 1].block);
     }
     snprintf(status, sizeof(status), "Joined as %s", profile.username);
     return 1;
@@ -598,8 +655,14 @@ void NetSessionPoll(VoxelWorld *world)
             id = ProtoPacketId(payload, payloadLen);
             if (id == OC_S2C_BLOCK && ProtoParseBlock(payload, payloadLen, &x, &y, &z, &block))
             {
+                int lx = 0;
+                int ly = 0;
+                int lz = 0;
+                int lblock = 0;
+
                 RememberEdit(x, y, z, block);
-                NoteEdit(x, y, z, block);
+                if ((block != OC_BLOCK_AIR) || !NetSessionLookBlock(&lx, &ly, &lz, &lblock)) NoteEdit(x, y, z, block);
+                else NoteEdit(lx, ly, lz, (unsigned)lblock);
                 ApplyOne(world, x, y, z, block);
             }
             else if (id == OC_S2C_REJECT)
@@ -669,12 +732,31 @@ void NetSessionSyncInventory(const Player *player)
     haveSent = 1;
 }
 
+void NetSessionSyncPose(const Player *player)
+{
+    unsigned char frame[32];
+    int n = 0;
+    uint64_t now = 0;
+
+    if (!inWorld || (player == NULL) || (sock < 0)) return;
+    now = NowMs();
+    if ((nextPoseMs != 0) && (now < nextPoseMs)) return;
+    n = ProtoBuildPose(frame, (int)sizeof(frame), player->position.x, player->position.y, player->position.z, player->yaw, player->pitch);
+    if ((n < 0) || !WireSendAll(sock, frame, n)) return;
+    nextPoseMs = now + 400;
+}
+
 void NetSessionLeave(const Player *player)
 {
     unsigned char frame[16];
     int n = 0;
 
-    if (inWorld && (player != NULL)) NetSessionSyncInventory(player);
+    if (inWorld && (player != NULL))
+    {
+        nextPoseMs = 0;
+        NetSessionSyncPose(player);
+        NetSessionSyncInventory(player);
+    }
     if (sock >= 0)
     {
         n = ProtoBuildDisconnect(frame, (int)sizeof(frame));

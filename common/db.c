@@ -196,7 +196,14 @@ int OcDbOpen(OcDb *db, const char *path)
         " PRIMARY KEY(x, y, z));"
         "CREATE TABLE IF NOT EXISTS extension_status ("
         " name TEXT PRIMARY KEY,"
-        " loaded INTEGER NOT NULL);"))
+        " loaded INTEGER NOT NULL);"
+        "CREATE TABLE IF NOT EXISTS profile_pose ("
+        " account_id INTEGER PRIMARY KEY REFERENCES accounts(id),"
+        " pos_x REAL NOT NULL,"
+        " pos_y REAL NOT NULL,"
+        " pos_z REAL NOT NULL,"
+        " yaw REAL NOT NULL,"
+        " pitch REAL NOT NULL);"))
     {
         OcDbClose(db);
         return 0;
@@ -543,5 +550,53 @@ int OcDbLoadEdits(OcDb *db, OcEdit *edits, int cap, int *count)
     }
     sqlite3_finalize(stmt);
     *count = n;
+    return 1;
+}
+
+int OcDbSavePose(OcDb *db, unsigned accountId, float x, float y, float z, float yaw, float pitch)
+{
+    sqlite3_stmt *stmt = NULL;
+    int status = 0;
+
+    if ((db == NULL) || (db->sqlite == NULL) || (accountId == 0)) return 0;
+    status = sqlite3_prepare_v2((sqlite3 *)db->sqlite,
+        "INSERT INTO profile_pose(account_id, pos_x, pos_y, pos_z, yaw, pitch) VALUES (?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(account_id) DO UPDATE SET pos_x = excluded.pos_x, pos_y = excluded.pos_y, "
+        "pos_z = excluded.pos_z, yaw = excluded.yaw, pitch = excluded.pitch", -1, &stmt, NULL);
+    if (status != SQLITE_OK) return 0;
+    sqlite3_bind_int(stmt, 1, (int)accountId);
+    sqlite3_bind_double(stmt, 2, (double)x);
+    sqlite3_bind_double(stmt, 3, (double)y);
+    sqlite3_bind_double(stmt, 4, (double)z);
+    sqlite3_bind_double(stmt, 5, (double)yaw);
+    sqlite3_bind_double(stmt, 6, (double)pitch);
+    status = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    return status == SQLITE_DONE;
+}
+
+int OcDbLoadPose(OcDb *db, unsigned accountId, float *x, float *y, float *z, float *yaw, float *pitch)
+{
+    sqlite3_stmt *stmt = NULL;
+    int status = 0;
+
+    if ((db == NULL) || (db->sqlite == NULL) || (accountId == 0)) return 0;
+    if ((x == NULL) || (y == NULL) || (z == NULL) || (yaw == NULL) || (pitch == NULL)) return 0;
+    status = sqlite3_prepare_v2((sqlite3 *)db->sqlite,
+        "SELECT pos_x, pos_y, pos_z, yaw, pitch FROM profile_pose WHERE account_id = ?", -1, &stmt, NULL);
+    if (status != SQLITE_OK) return 0;
+    sqlite3_bind_int(stmt, 1, (int)accountId);
+    status = sqlite3_step(stmt);
+    if (status != SQLITE_ROW)
+    {
+        sqlite3_finalize(stmt);
+        return 0;
+    }
+    *x = (float)sqlite3_column_double(stmt, 0);
+    *y = (float)sqlite3_column_double(stmt, 1);
+    *z = (float)sqlite3_column_double(stmt, 2);
+    *yaw = (float)sqlite3_column_double(stmt, 3);
+    *pitch = (float)sqlite3_column_double(stmt, 4);
+    sqlite3_finalize(stmt);
     return 1;
 }
