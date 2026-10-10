@@ -4,7 +4,7 @@ Mobs are the living creatures. Vehicles, projectiles, and technical entities are
 
 IDs from the misode/mcmeta `summary` registries dump fetched 2026-10-10. That branch was on Minecraft Java Edition 26.4 Snapshot 3 (data version 5122, built 2026-10-06). Behavior target is the stable release Java Edition 26.3 (2026-09-15, protocol 777, data version 5023). A public 26.3 ID list counted 1,286 blocks, 1,658 items, and 161 entity types. This dump has a few more because it includes that snapshot.
 
-Textures under `src/resources/textures/entity/` are Good Vibes art. They are not a simulation.
+Textures under `client/resources/textures/entity/` are Good Vibes art. They are not a simulation.
 
 163 entity types. 92 mobs, 29 vehicles, 21 projectiles, 21 technical. 0 done, 163 missing.
 

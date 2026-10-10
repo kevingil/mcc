@@ -9,7 +9,7 @@ Edit the status word only: `missing`, `cube`, `partial`, `done`. Regenerating th
 Status:
 
 - `missing` means OpenCraft does not simulate it.
-- `cube` means a full-cube stand-in exists in `src/voxel_types.h`. No states, drops, or hardness.
+- `cube` means a full-cube stand-in exists in `client/voxel_types.h`. No states, drops, or hardness.
 - `partial` means some behavior exists and the slice is not done.
 - `done` means the owning slice's checks passed.
 
