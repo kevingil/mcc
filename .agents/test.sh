@@ -45,7 +45,7 @@ GAME_PID=$!
 
 WID=""
 for _ in $(seq 1 40); do
-  WID="$(xdotool search --name "MC.C" 2>/dev/null | head -1 || true)"
+  WID="$(xdotool search --name "OpenCraft" 2>/dev/null | head -1 || true)"
   if [ -n "$WID" ]; then
     break
   fi
@@ -58,7 +58,7 @@ for _ in $(seq 1 40); do
 done
 
 if [ -z "$WID" ]; then
-  echo "MC.C window did not appear" >&2
+  echo "OpenCraft window did not appear" >&2
   cat "$OUT_DIR/game.log" >&2
   exit 1
 fi
