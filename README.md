@@ -8,6 +8,8 @@
 
 An open-world voxel game built with raylib, featuring open world gameplay with infinite terrain generation, block building, and first-person exploration. Built using a modular chunk system for efficient rendering and world management.
 
+The Java Edition parity tracker lives in `docs/parity/`. `docs/parity/SLICES.md` is the ordered work, and `docs/parity/AGENT.md` is how an agent session takes one slice.
+
 ### Features
 
  - **First-person 3D exploration** with smooth WASD movement and mouse look

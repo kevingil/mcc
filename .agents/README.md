@@ -49,6 +49,10 @@ MCC_TEST_OUT=/tmp/mcc-test bash .agents/test.sh
 
 A missing window, an early exit, or a black frame fails the script.
 
+## Parity work
+
+`docs/parity/README.md` is the map. A session that implements gameplay reads `docs/parity/AGENT.md` and one slice in `docs/parity/SLICES.md`, then stops. Ray tracing is slice S30 and stays blocked.
+
 ## Cloud Agent install
 
 The Cloud Agent install command is `bash .agents/setup.sh`. Nothing needs to stay running after boot. Build and run the smoke test when you need to check a change.
