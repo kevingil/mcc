@@ -1,4 +1,5 @@
 #include "player.h"
+#include "net_session.h"
 #include "voxel_renderer.h"
 #include "raymath.h"
 #include <math.h>
@@ -369,6 +370,12 @@ void UpdateBlockTarget(Player* player, VoxelWorld* world) {
     player->hasTarget = RaycastToBlock(rayOrigin, rayDirection, world, &player->targetBlock, &hitNormal);
 }
 
+static void CommitBlock(VoxelWorld* world, BlockPos pos, BlockType block)
+{
+    SetBlock(world, pos, block);
+    NetSessionLocalBlock(pos.x, pos.y, pos.z, (int)block);
+}
+
 static void UseBucket(Player* player, VoxelWorld* world) {
     BlockType target = BLOCK_AIR;
 
@@ -376,7 +383,7 @@ static void UseBucket(Player* player, VoxelWorld* world) {
     target = GetBlock(world, player->targetBlock);
     if (target != BLOCK_WATER) return;
 
-    SetBlock(world, player->targetBlock, BLOCK_AIR);
+    CommitBlock(world, player->targetBlock, BLOCK_AIR);
     player->hotbar[player->hotbarSlot] = BLOCK_WATER_BUCKET;
     player->selectedBlock = BLOCK_WATER_BUCKET;
 }
@@ -398,7 +405,7 @@ static void PlaceWaterBucket(Player* player, VoxelWorld* world) {
     if ((there != BLOCK_AIR) && !IsWaterBlock(there)) return;
     if (there == BLOCK_WATER) return;
 
-    SetBlock(world, placePos, BLOCK_WATER);
+    CommitBlock(world, placePos, BLOCK_WATER);
     player->hotbar[player->hotbarSlot] = BLOCK_BUCKET;
     player->selectedBlock = BLOCK_BUCKET;
 }
@@ -441,7 +448,7 @@ void HandleBlockPlacement(Player* player, VoxelWorld* world) {
         );
         
         if (!wouldIntersectPlayer && GetBlock(world, placePos) == BLOCK_AIR) {
-            SetBlock(world, placePos, player->selectedBlock);
+            CommitBlock(world, placePos, player->selectedBlock);
         }
     }
 }
@@ -452,7 +459,7 @@ void HandleBlockBreaking(Player* player, VoxelWorld* world) {
     BlockType currentBlock = GetBlock(world, player->targetBlock);
     if (IsWaterBlock(currentBlock)) return;
     if (currentBlock != BLOCK_AIR) {
-        SetBlock(world, player->targetBlock, BLOCK_AIR);
+        CommitBlock(world, player->targetBlock, BLOCK_AIR);
     }
 }
 

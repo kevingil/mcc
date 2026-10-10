@@ -28,8 +28,10 @@ The Java Edition parity tracker lives in `docs/parity/`. `docs/parity/SLICES.md`
 The game opens on the OpenCraft title screen.
 
 - **Singleplayer** opens the world list. Play a world, create one, edit the name, re-create it, or delete it.
-- **Multiplayer** and **Realms** are listed and marked coming soon.
+- **Multiplayer** creates an account or logs in, then joins a dedicated server. Realms stays coming soon.
 - **Options...** and **Quit Game** do what they say.
+
+Accounts exist only in the game. The multiplayer screen asks for a username, a password, and an optional email. The server stores a password hash in `opencraft.db`. Two clients on that server share one map. Each account keeps its own hotbar and held slot. Singleplayer worlds are unchanged.
 
 Worlds live in `saves/world_<id>/`. `level.dat` is gzip NBT for the name, seed, spawn, and player. Edited chunks are zlib NBT in `region/r.<x>.<z>.mca`. `level.txt` is the menu index. Client output goes to `logs/latest.log`, and the next launch gzips that file to `logs/YYYY-MM-DD-N.log.gz`.
 
@@ -82,7 +84,13 @@ cmake --build build
 
 - Inside the build folder are another folder (named the same as the project name on CMakeLists.txt) with the executable and resources folder.
 - In order for resources to load properly, cd to `client` and run the executable (`../build/${PROJECT_NAME}/${PROJECT_NAME}`) from there.
-- The dedicated server binary is `build/server/opencraft-server`. It does not open a window.
+- The dedicated server binary is `build/server/opencraft-server`. It does not open a window. From the repo root:
+
+```sh
+./build/server/opencraft-server --port 25570 --world world
+```
+
+That listens on `0.0.0.0:25570` and writes `world/opencraft.db`. Launch two clients from `client/` with `../build/mcc/mcc`. In Multiplayer, create an account or log in, then Join World. `session_test` checks that a rejoin keeps the map and the hotbar.
 
 - cmake will automatically download a current release of raylib but if you want to use your local version you can pass `-DFETCHCONTENT_SOURCE_DIR_RAYLIB=<dir_with_raylib>`
 

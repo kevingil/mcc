@@ -24,6 +24,7 @@
 #include "player.h"
 #include "world_catalog.h"
 #include "world_save.h"
+#include "net_session.h"
 #include <stdio.h>
 
 //----------------------------------------------------------------------------------
@@ -65,9 +66,18 @@ void InitGameplayScreen(void)
     
     if (!gameInitialized) {
         Vector3 startPosition = { 0.0f, 0.0f, 0.0f };
+        int online = NetSessionIsInWorld();
 
-        WorldSaveBind(GetActiveWorldFolder());
-        SetWorldGenerationSeed(WorldSaveSeed());
+        if (online)
+        {
+            WorldSaveBind("");
+            SetWorldGenerationSeed(NetSessionSeed());
+        }
+        else
+        {
+            WorldSaveBind(GetActiveWorldFolder());
+            SetWorldGenerationSeed(WorldSaveSeed());
+        }
         InitVoxelWorld(&world);
 
         Vector3 shore = { 0.0f, 0.0f, 0.0f };
@@ -75,18 +85,21 @@ void InitGameplayScreen(void)
         bool onShore = false;
 
         startPosition = (Vector3){ 0.0f, GetSurfaceLevel(0, 0), 0.0f };
-        if (!WorldSaveHasPlayer()) onShore = FindShoreSpawn(&shore, &shoreYaw);
+        if (!online && !WorldSaveHasPlayer()) onShore = FindShoreSpawn(&shore, &shoreYaw);
+        if (online) onShore = FindShoreSpawn(&shore, &shoreYaw);
         if (onShore) startPosition = shore;
-        if (WorldSaveHasPlayer()) startPosition = WorldSavePlayerPosition();
-        else WorldSaveSetSpawn((int)startPosition.x, (int)startPosition.y, (int)startPosition.z);
+        if (!online && WorldSaveHasPlayer()) startPosition = WorldSavePlayerPosition();
+        else if (!online) WorldSaveSetSpawn((int)startPosition.x, (int)startPosition.y, (int)startPosition.z);
 
         InitPlayer(&player, startPosition);
-        WorldSaveApplyPlayer(&player);
+        if (online) NetSessionApplySpawnInventory(&player);
+        else WorldSaveApplyPlayer(&player);
         if (onShore) SetPlayerLook(&player, shoreYaw, -0.45f);
 
         // Load initial chunks near spawn BEFORE player physics start
         // otherwise player will fall through the world forever
         LoadChunksAroundPlayer(&world, player.position);
+        if (online) NetSessionOverlayEdits(&world);
         nextWorldSave = GetTime() + 20.0;
         savedWhilePaused = false;
         
@@ -127,7 +140,8 @@ void UpdateGameplayScreen(void)
     {
         if (!savedWhilePaused)
         {
-            WorldSaveFlush(&player, &world);
+            if (NetSessionIsInWorld()) NetSessionSyncInventory(&player);
+            else WorldSaveFlush(&player, &world);
             savedWhilePaused = true;
         }
 
@@ -165,7 +179,8 @@ void UpdateGameplayScreen(void)
         savedWhilePaused = false;
         if (GetTime() >= nextWorldSave)
         {
-            WorldSaveFlush(&player, &world);
+            if (NetSessionIsInWorld()) NetSessionSyncInventory(&player);
+            else WorldSaveFlush(&player, &world);
             nextWorldSave = GetTime() + 20.0;
         }
 
@@ -175,6 +190,13 @@ void UpdateGameplayScreen(void)
         
         // Update player (handles input, physics, interaction)
         UpdatePlayer(&player, &world);
+
+        if (NetSessionIsInWorld())
+        {
+            NetSessionPoll(&world);
+            NetSessionOverlayEdits(&world);
+            NetSessionSyncInventory(&player);
+        }
         
         // Exit to menu (alternative method - keeping ENTER as backup)
         if (IsKeyPressed(KEY_ENTER) && IsCursorOnScreen() && !player.inventoryOpen)
@@ -287,6 +309,19 @@ void DrawGameplayScreen(void)
         DrawPauseMenu();
     }
 
+    if (NetSessionIsInWorld())
+    {
+        const char *held = GetBlockName(player.selectedBlock);
+        const char *edit = NetSessionEditLine();
+
+        DrawText(TextFormat("Online  %s", NetSessionName()), 12, 190, 22, YELLOW);
+        DrawText(TextFormat("Held  %s   slot %d", held, player.hotbarSlot + 1), 12, 214, 22, WHITE);
+        if ((edit != NULL) && (edit[0] != '\0'))
+        {
+            DrawText(edit, 12, 172, 22, (Color){ 80, 255, 120, 255 });
+        }
+    }
+
     if (GetActiveWorldName()[0] != '\0')
     {
         const char *worldName = GetActiveWorldName();
@@ -378,7 +413,8 @@ void UnloadGameplayScreen(void)
     EnableCursor();
 
     if (gameInitialized) {
-        WorldSaveFlush(&player, &world);
+        if (NetSessionIsInWorld()) NetSessionLeave(&player);
+        else WorldSaveFlush(&player, &world);
         UnloadVoxelWorld(&world);
         UnloadVoxelRenderer();
         gameInitialized = false;
