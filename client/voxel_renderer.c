@@ -422,7 +422,7 @@ bool IsChunkInFrustum(Chunk* chunk, Camera3D camera) {
     Vector3 chunkCenter = Vector3Add(chunkWorldPos, (Vector3){CHUNK_SIZE/2, WORLD_HEIGHT/2, CHUNK_SIZE/2});
     
     float distance = Vector3Distance(camera.position, chunkCenter);
-    float maxDistance = RENDER_DISTANCE * CHUNK_SIZE;
+    float maxDistance = GameRenderDistance() * CHUNK_SIZE;
     
     return distance <= maxDistance;
 }

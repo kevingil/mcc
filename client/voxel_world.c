@@ -9,6 +9,23 @@
 //----------------------------------------------------------------------------------
 // World Management Functions
 //----------------------------------------------------------------------------------
+int GameRenderDistance(void)
+{
+    static int distance = -1;
+    const char *env = NULL;
+
+    if (distance >= 0) return distance;
+    distance = RENDER_DISTANCE;
+    env = getenv("MCC_RENDER_DISTANCE");
+    if (env != NULL)
+    {
+        int value = atoi(env);
+
+        if ((value >= 1) && (value <= RENDER_DISTANCE)) distance = value;
+    }
+    return distance;
+}
+
 void InitVoxelWorld(VoxelWorld* world) {
     world->chunkCount = 0;
     world->playerPosition = (Vector3){0, 70, 0};
@@ -144,7 +161,7 @@ void UnloadChunk(VoxelWorld* world, int index) {
 }
 
 void UnloadDistantChunks(VoxelWorld* world, Vector3 playerPosition) {
-    float maxDistance = RENDER_DISTANCE * CHUNK_SIZE * 1.5f; // Add some buffer
+    float maxDistance = GameRenderDistance() * CHUNK_SIZE * 1.5f; // Add some buffer
     
     for (int i = 0; i < MAX_CHUNKS; i++) {
         if (world->chunks[i].isLoaded) {
@@ -254,15 +271,17 @@ void LoadChunksAroundPlayer(VoxelWorld* world, Vector3 playerPosition) {
     ChunkPos playerChunk = WorldToChunk(playerPosition);
     
     // Load chunks in a square around the player
-    for (int x = -RENDER_DISTANCE; x <= RENDER_DISTANCE; x++) {
-        for (int z = -RENDER_DISTANCE; z <= RENDER_DISTANCE; z++) {
+    int renderDistance = GameRenderDistance();
+
+    for (int x = -renderDistance; x <= renderDistance; x++) {
+        for (int z = -renderDistance; z <= renderDistance; z++) {
             ChunkPos chunkPos = {playerChunk.x + x, playerChunk.z + z};
             
             // Check if chunk is in circular range (not square)
             Vector3 chunkWorldPos = ChunkToWorld(chunkPos);
             float distance = Distance2D(playerPosition, chunkWorldPos);
             
-            if (distance <= RENDER_DISTANCE * CHUNK_SIZE) {
+            if (distance <= renderDistance * CHUNK_SIZE) {
                 // Load chunk if not already loaded
                 if (!GetChunk(world, chunkPos)) {
                     LoadChunk(world, chunkPos);
