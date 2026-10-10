@@ -25,6 +25,8 @@
 #include "world_catalog.h"
 #include "world_save.h"
 #include "net_session.h"
+#include "menu_ui.h"
+#include "biomes.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -38,7 +40,8 @@ static int finishScreen = 0;
 // Pause menu state
 static bool gamePaused = false;
 static int pauseMenuSelection = 0;
-static int pauseMenuItemCount = 2;
+static int pauseMenuItemCount = 6;
+static const char *pauseNotice = NULL;
 
 // Voxel game systems
 static VoxelWorld world;
@@ -203,6 +206,7 @@ static void StandFacingBlock(Player *body, VoxelWorld *ground, int bx, int by, i
 //----------------------------------------------------------------------------------
 // Local Functions Declaration
 //----------------------------------------------------------------------------------
+static void LayoutPause(MenuButton *buttons);
 static void DrawPauseMenu(void);
 
 //----------------------------------------------------------------------------------
@@ -223,7 +227,13 @@ void InitGameplayScreen(void)
         Vector3 startPosition = { 0.0f, 0.0f, 0.0f };
         int online = NetSessionIsInWorld();
 
-        if (online)
+        if (BiomeTourActive())
+        {
+            WorldSaveBind("");
+            SetWorldGenerationSeed(1);
+            online = 0;
+        }
+        else if (online)
         {
             WorldSaveBind("");
             SetWorldGenerationSeed(NetSessionSeed());
@@ -271,7 +281,15 @@ void InitGameplayScreen(void)
             startPosition.x += slot*2.2f*side;
             startPosition.z += slot*2.2f*forward;
         }
-        if (!online && WorldSaveHasPlayer()) startPosition = WorldSavePlayerPosition();
+        if (BiomeTourActive())
+        {
+            int columnX = BIOME_STRIDE/2;
+            int columnZ = BIOME_STRIDE/2;
+
+            startPosition = (Vector3){ columnX + 0.5f, GetSurfaceLevel(columnX, columnZ), columnZ + 0.5f };
+            onShore = false;
+        }
+        else if (!online && WorldSaveHasPlayer()) startPosition = WorldSavePlayerPosition();
         else if (!online) WorldSaveSetSpawn((int)startPosition.x, (int)startPosition.y, (int)startPosition.z);
 
         InitPlayer(&player, startPosition);
@@ -319,8 +337,7 @@ void UpdateGameplayScreen(void)
     {
         // If inventory is open, close it first
         if (player.inventoryOpen) {
-            player.inventoryOpen = false;
-            DisableCursor();
+            InventoryClose(&player);
         } else {
             // Otherwise toggle pause menu
             gamePaused = !gamePaused;
@@ -344,32 +361,40 @@ void UpdateGameplayScreen(void)
             savedWhilePaused = true;
         }
 
-        // Handle pause menu input
-        if (IsKeyPressed(KEY_UP) && pauseMenuSelection > 0)
         {
-            pauseMenuSelection--;
-            PlaySound(fxCoin);
-        }
-        
-        if (IsKeyPressed(KEY_DOWN) && pauseMenuSelection < pauseMenuItemCount - 1)
-        {
-            pauseMenuSelection++;
-            PlaySound(fxCoin);
-        }
-        
-        if (IsKeyPressed(KEY_ENTER))
-        {
-            switch (pauseMenuSelection)
+            MenuButton buttons[6] = { 0 };
+            int activated = -1;
+            int i = 0;
+
+            LayoutPause(buttons);
+            for (i = 0; i < pauseMenuItemCount; i++)
             {
-                case 0: // Resume Game
+                UpdateMenuButton(&buttons[i]);
+                if (buttons[i].clicked) activated = i;
+            }
+            if (IsKeyPressed(KEY_UP) && (pauseMenuSelection > 0))
+            {
+                pauseMenuSelection--;
+                PlaySound(fxCoin);
+            }
+            if (IsKeyPressed(KEY_DOWN) && (pauseMenuSelection < pauseMenuItemCount - 1))
+            {
+                pauseMenuSelection++;
+                PlaySound(fxCoin);
+            }
+            if (IsKeyPressed(KEY_ENTER)) activated = pauseMenuSelection;
+            if (activated >= 0)
+            {
+                PlaySound(fxCoin);
+                pauseNotice = NULL;
+                if (activated == 0)
+                {
                     gamePaused = false;
                     DisableCursor();
-                    PlaySound(fxCoin);
-                    break;
-                case 1: // Exit to Menu
-                    finishScreen = 1;
-                    PlaySound(fxCoin);
-                    break;
+                }
+                else if (activated == 5) finishScreen = 1;
+                else if (activated == 3) pauseNotice = "Options are on the title screen.";
+                else pauseNotice = "Coming soon.";
             }
         }
     }
@@ -531,6 +556,16 @@ void DrawGameplayScreen(void)
         DrawText("Click to start playing!", screenWidth/2 - 120, screenHeight - 50, 20, YELLOW);
     }
     
+    if (BiomeTourActive())
+    {
+        const Biome *biome = BiomeAt((int)player.position.x, (int)player.position.z);
+        int scale = MenuScale();
+
+        DrawRectangle(0, 0, GetScreenWidth(), 28*scale, Fade(BLACK, 0.55f));
+        DrawMenuText(8*scale, 8*scale, 12*scale, TextFormat("%s", biome->name), WHITE);
+        DrawMenuText(GetScreenWidth() - 80*scale, 8*scale, 8*scale, TextFormat("%d / %d", BiomeTourIndex() + 1, BiomeCount()), WHITE);
+    }
+
     // Draw pause menu
     if (gamePaused) {
         DrawPauseMenu();
@@ -566,73 +601,59 @@ void DrawGameplayScreen(void)
     }
 }
 
-// Draw pause menu
-void DrawPauseMenu(void)
+static void LayoutPause(MenuButton *buttons)
 {
-    int screenWidth = GetScreenWidth();
-    int screenHeight = GetScreenHeight();
-    
-    // Draw semi-transparent overlay
-    DrawRectangle(0, 0, screenWidth, screenHeight, Fade(BLACK, 0.5f));
-    
-    // Menu background
-    int menuWidth = 400;
-    int menuHeight = 500;
-    int menuX = screenWidth/2 - menuWidth/2;
-    int menuY = screenHeight/2 - menuHeight/2;
-    
-    DrawRectangle(menuX, menuY, menuWidth, menuHeight, (Color){40, 40, 40, 240});
-    DrawRectangleLines(menuX, menuY, menuWidth, menuHeight, WHITE);
-    
-    // Title
-    DrawText("GAME PAUSED", menuX + menuWidth/2 - 90, menuY + 30, 30, WHITE);
-    
-    // Menu options
-    const char* menuItems[] = {
-        "Resume Game",
-        "Exit to Menu"
-    };
-    
-    int itemStartY = menuY + 100;
-    int itemSpacing = 40;
-    
-    for (int i = 0; i < pauseMenuItemCount; i++) {
-        Color textColor = (i == pauseMenuSelection) ? YELLOW : WHITE;
-        int textWidth = MeasureText(menuItems[i], 24);
-        int textX = menuX + menuWidth/2 - textWidth/2;
-        int textY = itemStartY + i * itemSpacing;
-        
-        // Highlight selected item
-        if (i == pauseMenuSelection) {
-            DrawRectangle(textX - 10, textY - 5, textWidth + 20, 30, Fade(YELLOW, 0.3f));
-        }
-        
-        DrawText(menuItems[i], textX, textY, 24, textColor);
+    int scale = MenuScale();
+    int cx = GetScreenWidth()/2;
+    int fullW = 200*scale;
+    int halfW = 98*scale;
+    int buttonH = 20*scale;
+    int gap = 4*scale;
+    int y = GetScreenHeight()/2 - (buttonH*4 + gap*3)/2;
+
+    buttons[0].bounds = (Rectangle){ (float)(cx - fullW/2), (float)y, (float)fullW, (float)buttonH };
+    buttons[0].label = "Back to Game";
+    buttons[0].enabled = true;
+
+    buttons[1].bounds = (Rectangle){ (float)(cx - fullW/2), (float)(y + (buttonH + gap)), (float)halfW, (float)buttonH };
+    buttons[1].label = "Advancements";
+    buttons[1].enabled = true;
+
+    buttons[2].bounds = (Rectangle){ (float)(cx - fullW/2 + halfW + gap), (float)(y + (buttonH + gap)), (float)halfW, (float)buttonH };
+    buttons[2].label = "Statistics";
+    buttons[2].enabled = true;
+
+    buttons[3].bounds = (Rectangle){ (float)(cx - fullW/2), (float)(y + 2*(buttonH + gap)), (float)halfW, (float)buttonH };
+    buttons[3].label = "Options...";
+    buttons[3].enabled = true;
+
+    buttons[4].bounds = (Rectangle){ (float)(cx - fullW/2 + halfW + gap), (float)(y + 2*(buttonH + gap)), (float)halfW, (float)buttonH };
+    buttons[4].label = "Open to LAN";
+    buttons[4].enabled = true;
+
+    buttons[5].bounds = (Rectangle){ (float)(cx - fullW/2), (float)(y + 3*(buttonH + gap)), (float)fullW, (float)buttonH };
+    buttons[5].label = "Save and Quit to Title";
+    buttons[5].enabled = true;
+}
+
+static void DrawPauseMenu(void)
+{
+    MenuButton buttons[6] = { 0 };
+    int scale = MenuScale();
+    int i = 0;
+
+    LayoutPause(buttons);
+    DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(BLACK, 0.55f));
+    DrawMenuTextCentered(GetScreenWidth()/2, (int)buttons[0].bounds.y - 18*scale, 8*scale, "Game Menu", WHITE);
+    for (i = 0; i < pauseMenuItemCount; i++)
+    {
+        buttons[i].hovered = CheckCollisionPointRec(GetMousePosition(), buttons[i].bounds);
+        DrawStoneButton(&buttons[i], i == pauseMenuSelection);
     }
-    
-    // Settings preview section
-    DrawText("SETTINGS (Preview)", menuX + 20, menuY + 220, 20, GRAY);
-    DrawText("Coming Soon:", menuX + 20, menuY + 250, 16, WHITE);
-    
-    const char* settingsPreview[] = {
-        "• Fullscreen Mode",
-        "• Render Distance",
-        "• Field of View",
-        "• Mouse Sensitivity",
-        "• Volume Settings",
-        "• Graphics Quality",
-        "• Vsync",
-        "• Chunk Loading Distance",
-        "• Show Debug Info"
-    };
-    
-    for (int i = 0; i < 9; i++) {
-        DrawText(settingsPreview[i], menuX + 30, menuY + 275 + i * 20, 14, LIGHTGRAY);
+    if (pauseNotice != NULL)
+    {
+        DrawMenuTextCentered(GetScreenWidth()/2, (int)buttons[5].bounds.y + 28*scale, 8*scale, pauseNotice, YELLOW);
     }
-    
-    // Controls
-    DrawText("Use UP/DOWN arrows and ENTER to navigate", menuX + 20, menuY + menuHeight - 40, 16, LIGHTGRAY);
-    DrawText("Press ESC to resume game", menuX + 20, menuY + menuHeight - 20, 16, LIGHTGRAY);
 }
 
 // Gameplay Screen Unload logic

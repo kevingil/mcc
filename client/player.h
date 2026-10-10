@@ -39,6 +39,8 @@ void DrawBlockDebugInfo(Player* player, VoxelWorld* world);
 
 // Inventory functions
 void DrawInventory(Player* player);
+void InventoryHandleInput(Player* player);
+void InventoryClose(Player* player);
 int GetInventorySlotAtMouse(Vector2 mousePos);
 const char* GetBlockName(BlockType block);
 

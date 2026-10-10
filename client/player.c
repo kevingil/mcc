@@ -1,6 +1,8 @@
 #include "player.h"
 #include "net_session.h"
 #include "voxel_renderer.h"
+#include "biomes.h"
+#include "world_generation.h"
 #include "raymath.h"
 #include <math.h>
 
@@ -61,6 +63,15 @@ void InitPlayer(Player* player, Vector3 startPosition) {
     player->inventoryOpen = false;
     player->inventorySelectedSlot = 0;
     player->inventoryScrollOffset = 0;
+    player->craftSize = 2;
+    player->cursorBlock = BLOCK_AIR;
+    player->cursorCount = 0;
+    player->recipeBookOpen = 0;
+    player->recipeIndex = -1;
+    for (int craftIndex = 0; craftIndex < 9; craftIndex++) {
+        player->craft[craftIndex] = BLOCK_AIR;
+        player->craftCount[craftIndex] = 0;
+    }
     
     // Fill inventory with all available blocks
     int slotIndex = 0;
@@ -99,7 +110,37 @@ void SetPlayerLook(Player* player, float yaw, float pitch) {
 }
 
 void UpdatePlayer(Player* player, VoxelWorld* world) {
-    HandlePlayerInput(player);
+    if (BiomeTourActive()) {
+        int columnX = BiomeTourIndex()*BIOME_STRIDE + BIOME_STRIDE/2;
+        int columnZ = BIOME_STRIDE/2;
+
+        player->position = (Vector3){ columnX + 0.5f, GetSurfaceLevel(columnX, columnZ), columnZ + 0.5f };
+        player->velocity = (Vector3){ 0.0f, 0.0f, 0.0f };
+        player->onGround = true;
+        SetPlayerLook(player, 0.15f, -0.62f);
+        BiomeTourTick(GetFrameTime());
+        return;
+    }
+
+    {
+        int wasOpen = player->inventoryOpen;
+
+        HandlePlayerInput(player);
+        if (!wasOpen && player->inventoryOpen) {
+            int i = 0;
+
+            player->craftSize = 2;
+            if (player->hasTarget && (GetBlock(world, player->targetBlock) == BLOCK_CRAFTING_TABLE)) {
+                player->craftSize = 3;
+            }
+            for (i = 0; i < 9; i++) {
+                player->craft[i] = BLOCK_AIR;
+                player->craftCount[i] = 0;
+            }
+            player->recipeBookOpen = 0;
+            player->recipeIndex = -1;
+        }
+    }
     UpdatePlayerPhysics(player, world);
     UpdatePlayerInteraction(player, world);
     
@@ -111,53 +152,14 @@ void HandlePlayerInput(Player* player) {
     HandlePlayerMouseLook(player);
     HandlePlayerMovement(player);
     
-    // Inventory toggle with E key
     if (IsKeyPressed(KEY_E)) {
-        player->inventoryOpen = !player->inventoryOpen;
-        if (player->inventoryOpen) {
-            EnableCursor(); // Show cursor in inventory
-        } else {
-            DisableCursor(); // Hide cursor when closing inventory
+        if (player->inventoryOpen) InventoryClose(player);
+        else {
+            player->inventoryOpen = true;
+            EnableCursor();
         }
     }
-    
-    // Inventory navigation (only when inventory is open)
-    if (player->inventoryOpen) {
-        // Arrow key navigation
-        if (IsKeyPressed(KEY_LEFT)) {
-            player->inventorySelectedSlot = (player->inventorySelectedSlot - 1 + INVENTORY_SIZE) % INVENTORY_SIZE;
-        }
-        if (IsKeyPressed(KEY_RIGHT)) {
-            player->inventorySelectedSlot = (player->inventorySelectedSlot + 1) % INVENTORY_SIZE;
-        }
-        if (IsKeyPressed(KEY_UP)) {
-            player->inventorySelectedSlot = (player->inventorySelectedSlot - INVENTORY_COLS + INVENTORY_SIZE) % INVENTORY_SIZE;
-        }
-        if (IsKeyPressed(KEY_DOWN)) {
-            player->inventorySelectedSlot = (player->inventorySelectedSlot + INVENTORY_COLS) % INVENTORY_SIZE;
-        }
-        
-        // Select block from inventory with Enter
-        if (IsKeyPressed(KEY_ENTER) && player->inventory.blocks[player->inventorySelectedSlot] != BLOCK_AIR) {
-            player->selectedBlock = player->inventory.blocks[player->inventorySelectedSlot];
-            // Place in current hotbar slot (replace whatever is there)
-            player->hotbar[player->hotbarSlot] = player->selectedBlock;
-        }
-        
-        // Mouse click selection in inventory
-        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-            Vector2 mousePos = GetMousePosition();
-            int mouseSlot = GetInventorySlotAtMouse(mousePos);
-            if (mouseSlot >= 0 && mouseSlot < INVENTORY_SIZE) {
-                player->inventorySelectedSlot = mouseSlot;
-                if (player->inventory.blocks[mouseSlot] != BLOCK_AIR) {
-                    player->selectedBlock = player->inventory.blocks[mouseSlot];
-                    // Place in current hotbar slot (replace whatever is there)
-                    player->hotbar[player->hotbarSlot] = player->selectedBlock;
-                }
-            }
-        }
-    }
+    if (player->inventoryOpen) InventoryHandleInput(player);
     
     // Hotbar selection (only when inventory is closed)
     if (!player->inventoryOpen) {
@@ -548,16 +550,15 @@ void DrawBlockDebugInfo(Player* player, VoxelWorld* world) {
 }
 
 void DrawPlayerUI(Player* player) {
-    DrawCrosshair();
-    DrawHotbar(player);
-    
-    if (player->hasTarget) {
-        DrawBlockOutline(player->targetBlock);
-    }
-    
-    // Draw inventory if open
     if (player->inventoryOpen) {
         DrawInventory(player);
+        return;
+    }
+    DrawCrosshair();
+    DrawHotbar(player);
+
+    if (player->hasTarget) {
+        DrawBlockOutline(player->targetBlock);
     }
 }
 
@@ -572,56 +573,6 @@ void DrawCrosshair(void) {
     DrawLine(centerX, centerY - size, centerX, centerY + size, WHITE);
 }
 
-void DrawHotbar(Player* player) {
-    int screenWidth = GetScreenWidth();
-    int screenHeight = GetScreenHeight();
-    int slotSize = 40;
-    int hotbarWidth = 9 * slotSize;
-    int startX = (screenWidth - hotbarWidth) / 2;
-    int startY = screenHeight - slotSize - 20;
-    
-    // Get texture atlas for drawing block textures
-    Texture2D textureAtlas = GetTextureAtlas();
-    
-    for (int i = 0; i < 9; i++) {
-        int x = startX + i * slotSize;
-        int y = startY;
-        
-        // Draw slot background
-        Color slotColor = (i == player->hotbarSlot) ? YELLOW : GRAY;
-        DrawRectangle(x, y, slotSize, slotSize, slotColor);
-        DrawRectangleLines(x, y, slotSize, slotSize, WHITE);
-        
-        // Draw block texture or color fallback
-        if (player->hotbar[i] != BLOCK_AIR) {
-            if (textureAtlas.id > 0) {
-                // Get texture coordinates for the block (use top face for UI)
-                float u, v, w, h;
-                GetBlockTextureUV(player->hotbar[i], FACE_TOP, &u, &v, &w, &h);
-                
-                // Convert normalized coordinates to pixel coordinates
-                Rectangle sourceRect = {
-                    u * textureAtlas.width,
-                    v * textureAtlas.height,
-                    w * textureAtlas.width,
-                    h * textureAtlas.height
-                };
-                
-                // Draw the texture scaled to fit the slot
-                Rectangle destRect = {x + 5, y + 5, slotSize - 10, slotSize - 10};
-                DrawTexturePro(textureAtlas, sourceRect, destRect, (Vector2){0, 0}, 0.0f, WHITE);
-            } else {
-                // Fallback to color if texture not available
-                Color blockColor = GetBlockColor(player->hotbar[i]);
-                DrawRectangle(x + 5, y + 5, slotSize - 10, slotSize - 10, blockColor);
-            }
-        }
-        
-        // Draw slot number
-        DrawText(TextFormat("%d", i + 1), x + 2, y + 2, 10, WHITE);
-    }
-}
-
 void DrawBlockOutline(BlockPos position) {
     Vector3 blockPos = {position.x, position.y, position.z};
     Vector3 size = {1.0f, 1.0f, 1.0f};
@@ -631,126 +582,6 @@ void DrawBlockOutline(BlockPos position) {
 //----------------------------------------------------------------------------------
 // Inventory UI Functions
 //----------------------------------------------------------------------------------
-void DrawInventory(Player* player) {
-    int screenWidth = GetScreenWidth();
-    int screenHeight = GetScreenHeight();
-    
-    // Inventory background
-    int inventoryWidth = 600;
-    int inventoryHeight = 400;
-    int inventoryX = (screenWidth - inventoryWidth) / 2;
-    int inventoryY = (screenHeight - inventoryHeight) / 2;
-    
-    // Draw semi-transparent background
-    DrawRectangle(0, 0, screenWidth, screenHeight, Fade(BLACK, 0.5f));
-    
-    // Draw inventory window
-    DrawRectangle(inventoryX, inventoryY, inventoryWidth, inventoryHeight, (Color){50, 50, 50, 240});
-    DrawRectangleLines(inventoryX, inventoryY, inventoryWidth, inventoryHeight, WHITE);
-    
-    // Title
-    DrawText("INVENTORY", inventoryX + 20, inventoryY + 15, 24, WHITE);
-    DrawText("Use arrow keys to navigate, ENTER to select, E to close", inventoryX + 20, inventoryY + 45, 16, LIGHTGRAY);
-    
-    // Calculate slot dimensions
-    int slotSize = 50;
-    int slotSpacing = 5;
-    int startX = inventoryX + 50;
-    int startY = inventoryY + 80;
-    
-    // Get texture atlas for drawing block textures
-    Texture2D textureAtlas = GetTextureAtlas();
-    
-    // Draw inventory grid
-    for (int row = 0; row < INVENTORY_ROWS; row++) {
-        for (int col = 0; col < INVENTORY_COLS; col++) {
-            int slotIndex = row * INVENTORY_COLS + col;
-            int x = startX + col * (slotSize + slotSpacing);
-            int y = startY + row * (slotSize + slotSpacing);
-            
-            // Slot background
-            Color slotColor = (slotIndex == player->inventorySelectedSlot) ? YELLOW : GRAY;
-            DrawRectangle(x, y, slotSize, slotSize, slotColor);
-            DrawRectangleLines(x, y, slotSize, slotSize, WHITE);
-            
-            // Draw block if not air
-            if (player->inventory.blocks[slotIndex] != BLOCK_AIR) {
-                if (textureAtlas.id > 0) {
-                    // Get texture coordinates for the block (use top face for UI)
-                    float u, v, w, h;
-                    GetBlockTextureUV(player->inventory.blocks[slotIndex], FACE_TOP, &u, &v, &w, &h);
-                    
-                    // Convert normalized coordinates to pixel coordinates
-                    Rectangle sourceRect = {
-                        u * textureAtlas.width,
-                        v * textureAtlas.height,
-                        w * textureAtlas.width,
-                        h * textureAtlas.height
-                    };
-                    
-                    // Draw the texture scaled to fit the slot
-                    Rectangle destRect = {x + 5, y + 5, slotSize - 10, slotSize - 10};
-                    DrawTexturePro(textureAtlas, sourceRect, destRect, (Vector2){0, 0}, 0.0f, WHITE);
-                } else {
-                    // Fallback to color if texture not available
-                    Color blockColor = GetBlockColor(player->inventory.blocks[slotIndex]);
-                    DrawRectangle(x + 5, y + 5, slotSize - 10, slotSize - 10, blockColor);
-                }
-                
-                // Draw quantity if more than 1
-                if (player->inventory.quantities[slotIndex] > 1) {
-                    DrawText(TextFormat("%d", player->inventory.quantities[slotIndex]), 
-                             x + slotSize - 15, y + slotSize - 15, 12, WHITE);
-                }
-            }
-        }
-    }
-    
-    // Draw selected block info
-    if (player->inventory.blocks[player->inventorySelectedSlot] != BLOCK_AIR) {
-        const char* blockName = GetBlockName(player->inventory.blocks[player->inventorySelectedSlot]);
-        DrawText(TextFormat("Selected: %s", blockName), 
-                 inventoryX + 20, inventoryY + inventoryHeight - 80, 18, WHITE);
-        DrawText(TextFormat("Quantity: %d", player->inventory.quantities[player->inventorySelectedSlot]), 
-                 inventoryX + 20, inventoryY + inventoryHeight - 60, 16, LIGHTGRAY);
-    }
-    
-    // Instructions
-    DrawText("Click on a block to select it", inventoryX + 20, inventoryY + inventoryHeight - 40, 14, LIGHTGRAY);
-    DrawText("Selected blocks will be added to your hotbar", inventoryX + 20, inventoryY + inventoryHeight - 25, 14, LIGHTGRAY);
-}
-
-int GetInventorySlotAtMouse(Vector2 mousePos) {
-    int screenWidth = GetScreenWidth();
-    int screenHeight = GetScreenHeight();
-    
-    int inventoryWidth = 600;
-    int inventoryHeight = 400;
-    int inventoryX = (screenWidth - inventoryWidth) / 2;
-    int inventoryY = (screenHeight - inventoryHeight) / 2;
-    
-    int slotSize = 50;
-    int slotSpacing = 5;
-    int startX = inventoryX + 50;
-    int startY = inventoryY + 80;
-    
-    // Check if mouse is within inventory area
-    if (mousePos.x < startX || mousePos.x > startX + INVENTORY_COLS * (slotSize + slotSpacing) ||
-        mousePos.y < startY || mousePos.y > startY + INVENTORY_ROWS * (slotSize + slotSpacing)) {
-        return -1;
-    }
-    
-    // Calculate which slot the mouse is over
-    int col = (mousePos.x - startX) / (slotSize + slotSpacing);
-    int row = (mousePos.y - startY) / (slotSize + slotSpacing);
-    
-    if (col >= 0 && col < INVENTORY_COLS && row >= 0 && row < INVENTORY_ROWS) {
-        return row * INVENTORY_COLS + col;
-    }
-    
-    return -1;
-}
-
 const char* GetBlockName(BlockType block) {
     if (IsWaterBlock(block)) return "Water";
     switch (block) {

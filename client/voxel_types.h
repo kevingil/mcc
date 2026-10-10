@@ -314,6 +314,13 @@ typedef struct {
     bool inventoryOpen;
     int inventorySelectedSlot;
     int inventoryScrollOffset;
+    int craftSize;
+    BlockType craft[9];
+    int craftCount[9];
+    BlockType cursorBlock;
+    int cursorCount;
+    int recipeBookOpen;
+    int recipeIndex;
 } Player;
 
 //----------------------------------------------------------------------------------
