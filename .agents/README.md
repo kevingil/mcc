@@ -24,10 +24,10 @@ Runs `cmake -S . -B build` and `cmake --build build`. The first configure downlo
 
 ## Run
 
-Resources load relative to the working directory. Start the game from `src/`:
+Resources load relative to the working directory. Start the game from `client/`:
 
 ```sh
-cd src
+cd client
 ../build/mcc/mcc
 ```
 

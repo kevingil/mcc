@@ -30,7 +30,7 @@ FetchContent_MakeAvailable(raylib)
 
 # Our Project
 add_executable(${PROJECT_NAME})
-add_subdirectory(src)
+add_subdirectory(client)
 
 set_target_properties(${PROJECT_NAME} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/${PROJECT_NAME})
@@ -40,13 +40,13 @@ set_property(TARGET ${PROJECT_NAME} PROPERTY VS_DEBUGGER_WORKING_DIRECTORY $<TAR
 if ("${PLATFORM}" STREQUAL "Web")
     add_custom_command(
         TARGET ${PROJECT_NAME} PRE_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/src/resources $<TARGET_FILE_DIR:${PROJECT_NAME}>/../resources
+        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/client/resources $<TARGET_FILE_DIR:${PROJECT_NAME}>/../resources
     )
     #DEPENDS ${PROJECT_NAME}
 else()
     add_custom_command(
         TARGET ${PROJECT_NAME} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/src/resources $<TARGET_FILE_DIR:${PROJECT_NAME}>/resources
+        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/client/resources $<TARGET_FILE_DIR:${PROJECT_NAME}>/resources
     )
     #DEPENDS ${PROJECT_NAME}
 endif()
@@ -57,13 +57,13 @@ target_link_libraries(${PROJECT_NAME} raylib ZLIB::ZLIB)
 
 add_executable(save_format_test
     tests/save_format_test.c
-    src/nbt.c
-    src/chunk_codec.c
-    src/anvil.c
-    src/level_data.c
-    src/client_log.c
+    client/nbt.c
+    client/chunk_codec.c
+    client/anvil.c
+    client/level_data.c
+    client/client_log.c
 )
-target_include_directories(save_format_test PRIVATE src)
+target_include_directories(save_format_test PRIVATE client)
 target_link_libraries(save_format_test ZLIB::ZLIB)
 
 # Web Configurations

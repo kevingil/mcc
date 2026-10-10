@@ -38,7 +38,7 @@ fi
 export DISPLAY=":${DISPLAY_NUM}"
 export LIBGL_ALWAYS_SOFTWARE=1
 
-cd "$ROOT/src"
+cd "$ROOT/client"
 # Line-buffer the log so "Block textures loaded" shows up before the stdio buffer fills.
 stdbuf -oL -eL "$ROOT/build/mcc/mcc" >"$OUT_DIR/game.log" 2>&1 &
 GAME_PID=$!

@@ -504,9 +504,9 @@ void LoadBlockTextures(void) {
         
         // Try different possible paths
         const char* possiblePaths[] = {
-            "src/resources/textures/block/%s.png",
-            "resources/textures/block/%s.png", 
-            "./src/resources/textures/block/%s.png",
+            "client/resources/textures/block/%s.png",
+            "resources/textures/block/%s.png",
+            "./client/resources/textures/block/%s.png",
             "./resources/textures/block/%s.png",
             "resources/textures/item/%s.png",
             "./resources/textures/item/%s.png"
