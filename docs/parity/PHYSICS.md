@@ -43,7 +43,7 @@ These are the player bases the acceptance tests lock. Other attributes are liste
 | `scale` | 1.0 | Hitbox multiplier |
 | `max_health` | 20 | Ten hearts, once health exists |
 
-`src/player.c` today uses walk 5.0, sprint 8.0, jump impulse 8.0 per second, gravity 20 per second squared, reach 5.0, and a terminal fall of 50. Those constants go away in the movement slice. Reach 5.0 is creative range, not survival.
+`client/player.c` today uses walk 5.0, sprint 8.0, jump impulse 8.0 per second, gravity 20 per second squared, reach 5.0, and a terminal fall of 50. Those constants go away in the movement slice. Reach 5.0 is creative range, not survival.
 
 Horizontal model, from the Player page. On a normal block the per-tick friction factor is 0.546. Walking acceleration is 0.098 blocks/tick^2. Sprinting uses 0.098 * 1.3. Each tick the acceleration is added, the player is moved, then horizontal velocity is multiplied by 0.546. Terminal speed is `a / (1 - 0.546)`.
 
@@ -85,7 +85,7 @@ Java Edition fluids:
 | Lava | Nether (`fast_lava`) | 1 block / 10 ticks | Wider spread |
 | Lava | Overworld, End | 1 block / 30 ticks | Shorter spread |
 
-Water already spreads seven steps in `src/water.c`, including a new source where two sources meet on solid ground. It is not on the 5-tick schedule, and it has no lava. In the Nether, water evaporates (`water_evaporates` on that dimension type).
+Water already spreads seven steps in `client/water.c`, including a new source where two sources meet on solid ground. It is not on the 5-tick schedule, and it has no lava. In the Nether, water evaporates (`water_evaporates` on that dimension type).
 
 Swimming and the water current are part of the fluid slice after the tick exists, not part of the first movement slice. Today's water sets vertical velocity to 4.5 while space is held and damps horizontal velocity by 0.55 per frame. That is a placeholder.
 

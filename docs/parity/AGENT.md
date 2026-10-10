@@ -54,7 +54,7 @@ Copy this into `SLICES.md` above S28, pick the next free id, and set `Blocked by
 ### S31: Pig saddle
 Status: TODO
 Blocked by: S23
-Owns: src/sim/pig.c, tests/pig_test.c
+Owns: game/pig.c, tests/pig_test.c
 Done when:
 - [ ] The check in the slice passes
 Out of scope:

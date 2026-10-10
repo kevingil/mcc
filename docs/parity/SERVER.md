@@ -1,12 +1,24 @@
 # Dedicated server
 
-Singleplayer stays an in-process simulation. The dedicated server is a second binary that runs that same simulation without a window. The client already has a multiplayer screen. Every button on it except Cancel is disabled. `src/screen_multiplayer.c`.
+The tree is three directories, not two.
+
+| Directory | What links it | Raylib |
+| --- | --- | --- |
+| `client/` | the game binary `mcc` | yes |
+| `game/` | `mcc` and `opencraft-server` | no |
+| `server/` | `opencraft-server` only | no |
+
+`client/` is the old `src/` tree: screens, the renderer, input, and `resources/`. Launch the game from `client/` so those relative paths resolve. `game/` is empty until a slice moves shared code out of the client. The server does not include the client, and the client does not include `server/main.c`. Protocol code lands in `net/` in S13, and both binaries link that. It is not a fourth copy of the world.
+
+`server/main.c` builds today and exits. It does not open a socket and it does not tick a world. S12 replaces that stub.
+
+Singleplayer stays an in-process simulation. The dedicated server is a second binary that runs that same simulation without a window. The client already has a multiplayer screen. Every button on it except Cancel is disabled. `client/screen_multiplayer.c`.
 
 The server is for people hosting on a VPS. It is not a Mojang-compatible server. An official client cannot connect, and OpenCraft does not connect to one.
 
 ## Process
 
-`opencraft-server` links the simulation, the NBT and region code, and the socket code. It does not link raylib. `src/voxel_types.h` includes `raylib.h` today, so the server slice has to move shared types out of that include. That split is the whole slice. It does not also add sockets.
+`opencraft-server` links the simulation, the NBT and region code, and the socket code. It does not link raylib. `client/voxel_types.h` includes `raylib.h` today, so the server slice has to move shared types out of that include. That split is the whole slice. It does not also add sockets.
 
 Runtime:
 

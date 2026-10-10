@@ -1,12 +1,12 @@
 # Shaders and ray tracing
 
-The game draws with raylib 5 and that library's default material. `InitVoxelRenderer` in `src/voxel_renderer.c` calls `LoadMaterialDefault()` for the opaque mesh and the transparent mesh. There is no GLSL file in the repo.
+The game draws with raylib 5 and that library's default material. `InitVoxelRenderer` in `client/voxel_renderer.c` calls `LoadMaterialDefault()` for the opaque mesh and the transparent mesh. There is no GLSL file in the repo.
 
 Ray tracing is the last feature. Slice S30 in `SLICES.md` is blocked. A session that starts it early is doing the wrong work.
 
 ## What "shader" means here
 
-Desktop raylib compiles GLSL 330. Shader files belong in `src/resources/shaders/` and load with `LoadShader`. The chunk mesher stays the owner of vertices. A shader samples the atlas and reads values the mesher already stored. It does not walk the voxel array.
+Desktop raylib compiles GLSL 330. Shader files belong in `client/resources/shaders/` and load with `LoadShader`. The chunk mesher stays the owner of vertices. A shader samples the atlas and reads values the mesher already stored. It does not walk the voxel array.
 
 Order:
 
