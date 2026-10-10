@@ -66,7 +66,7 @@ Blocked by: S01
 Owns: `common/physics.c`, `common/physics.h`, `client/player.c`, `tests/movement_test.c`, `CMakeLists.txt`
 Contract: `PHYSICS.md`
 
-Replace the frame-time gravity in `client/player.c` with the tick recurrence. Standing hitbox stays 0.6 by 1.8. Eye stays 1.62.
+Replace the frame-time gravity in `client/player.c` with the 64 Hz step in `PHYSICS.md`. The Java constants (`0.08`, `0.42`, `0.098`) are not applied once per sim tick. Standing hitbox stays 0.6 by 1.8. Eye stays 1.62.
 
 Done when `tests/movement_test` passes all of these on flat stone, with no window:
 
@@ -201,7 +201,7 @@ Move water onto the 5-tick schedule without changing the seven-step rule or the 
 
 Done when:
 
-- [ ] `tests/fluid_test` shows water advancing one block per 5 ticks and lava per 30.
+- [ ] `tests/fluid_test` shows water advancing one block per 16 sim ticks and lava per 96. Those are the Java 5-tick and 30-tick periods at 64 Hz.
 - [ ] A lava source in game flows and is not swimmable.
 - [ ] `registry/blocks.md` marks `lava` partial.
 
