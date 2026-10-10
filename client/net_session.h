@@ -19,6 +19,7 @@ void NetSessionSyncPose(const Player *player);
 
 int NetSessionCreateAccount(const char *host, int port, const char *user, const char *pass, const char *email);
 int NetSessionLogin(const char *host, int port, const char *user, const char *pass);
+int NetSessionLastReject(void);
 int NetSessionJoinWorld(void);
 
 void NetSessionApplySpawnInventory(Player *player);

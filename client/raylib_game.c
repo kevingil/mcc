@@ -93,7 +93,12 @@ int main(void)
     PlayMusicStream(music);
 
     // Setup and init first screen. MCC_SKIP_LOGO is for the multiplayer demo.
-    if (getenv("MCC_SKIP_LOGO") != NULL)
+    if (getenv("MCC_BIOME_TOUR") != NULL)
+    {
+        currentScreen = GAMEPLAY;
+        InitGameplayScreen();
+    }
+    else if (getenv("MCC_SKIP_LOGO") != NULL)
     {
         currentScreen = TITLE;
         InitTitleScreen();

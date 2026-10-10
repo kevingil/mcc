@@ -29,6 +29,7 @@ typedef char OcInvCheck[(OC_INV_SLOTS == INVENTORY_SIZE) ? 1 : -1];
 
 static int sock = -1;
 static int authed = 0;
+static unsigned lastReject = 0;
 static int inWorld = 0;
 static int applying = 0;
 static unsigned worldSeed = 0;
@@ -79,6 +80,11 @@ void NetSessionDisconnect(void)
     CloseSock();
     editCount = 0;
     editLine[0] = '\0';
+}
+
+int NetSessionLastReject(void)
+{
+    return (int)lastReject;
 }
 
 int NetSessionIsOnline(void)
@@ -246,13 +252,18 @@ static int FailReject(unsigned id, int payloadLen)
     char text[OC_TEXT_MAX + 1];
 
     text[0] = '\0';
+    lastReject = 0;
     if (id == OC_S2C_REJECT)
     {
         if (!ProtoParseReject(payload, payloadLen, &code, text, (int)sizeof(text)))
         {
             SetStatus("The server rejected the connection");
         }
-        else SetStatus(text);
+        else
+        {
+            lastReject = code;
+            SetStatus(text);
+        }
         CloseSock();
         return 0;
     }
