@@ -28,10 +28,10 @@ The Java Edition parity tracker lives in `docs/parity/`. `docs/parity/SLICES.md`
 The game opens on the OpenCraft title screen.
 
 - **Singleplayer** opens the world list. Play a world, create one, edit the name, re-create it, or delete it.
-- **Multiplayer** creates an account or logs in, then joins a dedicated server. Realms stays coming soon.
+- **Multiplayer** asks you to sign in once, then shows saved servers. Realms stays coming soon.
 - **Options...** and **Quit Game** do what they say.
 
-Accounts exist only in the game. The multiplayer screen asks for a username, a password, and an optional email. The server stores a password hash in `opencraft.db`. Two clients on that server share one map. Each account keeps its own hotbar and held slot. Singleplayer worlds are unchanged.
+Accounts exist only in the game. The first multiplayer screen asks for a username, a password, and an optional email. After that, Play Multiplayer is a list of saved servers, plus direct connect. Joining does not ask for the password again. The server stores a password hash in `opencraft.db`. Two clients on that server share one map. Each account keeps its own hotbar and held slot. Singleplayer worlds are unchanged.
 
 Worlds live in `saves/world_<id>/`. `level.dat` is gzip NBT for the name, seed, spawn, and player. Edited chunks are zlib NBT in `region/r.<x>.<z>.mca`. `level.txt` is the menu index. Client output goes to `logs/latest.log`, and the next launch gzips that file to `logs/YYYY-MM-DD-N.log.gz`.
 
@@ -90,7 +90,7 @@ cmake --build build
 ./build/server/opencraft-server --port 25570 --world world
 ```
 
-That listens on `0.0.0.0:25570` and writes `world/opencraft.db`. Launch two clients from `client/` with `../build/mcc/mcc`. In Multiplayer, create an account or log in, then Join World. `session_test` checks that a rejoin keeps the map and the hotbar.
+That listens on `0.0.0.0:25570` and writes `world/opencraft.db`. Launch two clients from `client/` with `../build/mcc/mcc`. In Multiplayer, create an account or log in once, then join a saved server. `session_test` checks that a rejoin keeps the map and the hotbar. `MCC_BIOME_TOUR=1` walks every biome palette.
 
 - cmake will automatically download a current release of raylib but if you want to use your local version you can pass `-DFETCHCONTENT_SOURCE_DIR_RAYLIB=<dir_with_raylib>`
 
