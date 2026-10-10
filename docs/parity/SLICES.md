@@ -38,6 +38,7 @@ Contracts: `PHYSICS.md`, `WORLD.md`, `SERVER.md`, `SHADERS.md`.
 | S28 | Chunk shader | TODO | S07, S11 |
 | S29 | Water shader | TODO | S10, S28 |
 | S30 | Ray tracing | BLOCKED | S17, S28, S29 |
+| S31 | Accounts | TODO | S17 |
 
 Take the earliest slice in that table whose status is `TODO` and whose blockers are all `DONE`. One session does not take a second slice. S12 is the wide header split. It stays one session and one PR.
 
@@ -515,3 +516,20 @@ Done when:
 - [ ] `bash .agents/test.sh` passes with the tracer left off.
 
 Out of scope: path tracing, reflections, replacing the raster renderer.
+
+## S31: Accounts
+
+Status: TODO
+Blocked by: S17
+Owns: `server/http.c`, `server/accounts.c`, `server/main.c`, `tests/accounts_test.c`, `CMakeLists.txt`
+Contract: `SERVER.md`
+
+One process. Civetweb listens on 8080. SQLite `accounts.db` lives in the world directory. The tick thread does not call SQLite. Routes: `GET /health`, `POST /accounts`, `POST /login`, `GET /profile`. Passwords are hashed. No second binary, no C++, no Drogon.
+
+Done when:
+
+- [ ] `tests/accounts_test` creates an account, logs in, and reads the profile against a temp database.
+- [ ] `opencraft-server` answers `GET /health` on 8080 while the game port is open.
+- [ ] `ldd` on `opencraft-server` does not show a C++ standard library.
+
+Out of scope: a website, admin UI, email, and a separate account service.
