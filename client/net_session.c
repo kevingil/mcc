@@ -494,6 +494,10 @@ int NetSessionJoinWorld(void)
         }
     }
     inWorld = 1;
+    if (editCount > 0)
+    {
+        NoteEdit(edits[editCount - 1].x, edits[editCount - 1].y, edits[editCount - 1].z, edits[editCount - 1].block);
+    }
     snprintf(status, sizeof(status), "Joined as %s", profile.username);
     return 1;
 }

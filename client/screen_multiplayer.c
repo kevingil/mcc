@@ -237,9 +237,13 @@ void UpdateMultiplayerScreen(void)
 
     LayoutOnline(buttons);
     EditFocus();
-    if (IsKeyPressed(KEY_TAB))
+    if (IsKeyPressed(KEY_TAB) || IsKeyPressed(KEY_DOWN))
     {
-        focus = (focus + (IsKeyDown(KEY_LEFT_SHIFT) ? 4 : 1)) % 5;
+        focus = (focus + 1) % 5;
+    }
+    if (IsKeyPressed(KEY_UP))
+    {
+        focus = (focus + 4) % 5;
     }
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
     {

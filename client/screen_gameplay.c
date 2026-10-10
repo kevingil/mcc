@@ -316,6 +316,7 @@ void DrawGameplayScreen(void)
 
         DrawText(TextFormat("Online  %s", NetSessionName()), 12, 190, 22, YELLOW);
         DrawText(TextFormat("Held  %s   slot %d", held, player.hotbarSlot + 1), 12, 214, 22, WHITE);
+        DrawText("F places the held block", 12, 238, 20, (Color){ 220, 220, 220, 255 });
         if ((edit != NULL) && (edit[0] != '\0'))
         {
             DrawText(edit, 12, 172, 22, (Color){ 80, 255, 120, 255 });

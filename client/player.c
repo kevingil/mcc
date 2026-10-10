@@ -346,6 +346,8 @@ bool CheckCollision(Player* player, VoxelWorld* world, Vector3 newPosition) {
     return false; // No collision
 }
 
+static void CommitBlock(VoxelWorld* world, BlockPos pos, BlockType block);
+
 void UpdatePlayerInteraction(Player* player, VoxelWorld* world) {
     UpdateBlockTarget(player, world);
     
@@ -355,9 +357,21 @@ void UpdatePlayerInteraction(Player* player, VoxelWorld* world) {
             HandleBlockBreaking(player, world);
         }
         
-        // Block placement (right click)
+        // Block placement (right click). F also drops the held block
+        // one step ahead, so a key can place when the cursor is grabbed.
         if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) {
             HandleBlockPlacement(player, world);
+        }
+        if (IsKeyPressed(KEY_F) && (player->selectedBlock != BLOCK_AIR)) {
+            BlockPos pos = player->targetBlock;
+
+            if (!player->hasTarget) {
+                pos.x = (int)floorf(player->position.x + sinf(player->yaw)*1.5f);
+                pos.y = (int)floorf(player->position.y);
+                pos.z = (int)floorf(player->position.z + cosf(player->yaw)*1.5f);
+                if (pos.y < 1) pos.y = 1;
+            }
+            CommitBlock(world, pos, player->selectedBlock);
         }
     }
 }
