@@ -26,9 +26,8 @@ static const CraftRecipe recipes[] = {
     { "Chest", BLOCK_OAK_PLANKS, 8, BLOCK_CHEST, 1, 3 }
 };
 
-static Texture2D guiInventory = { 0 };
-static Texture2D guiCrafting = { 0 };
-static Texture2D guiWidgets = { 0 };
+static Texture2D guiIcons = { 0 };
+static Texture2D guiSteve = { 0 };
 static int guiReady = 0;
 
 static int RecipeCount(void)
@@ -40,12 +39,10 @@ static void LoadGui(void)
 {
     if (guiReady) return;
     guiReady = 1;
-    guiInventory = LoadTexture("resources/textures/gui/container/inventory.png");
-    guiCrafting = LoadTexture("resources/textures/gui/container/crafting_table.png");
-    guiWidgets = LoadTexture("resources/textures/gui/widgets.png");
-    if (guiInventory.id != 0) SetTextureFilter(guiInventory, TEXTURE_FILTER_POINT);
-    if (guiCrafting.id != 0) SetTextureFilter(guiCrafting, TEXTURE_FILTER_POINT);
-    if (guiWidgets.id != 0) SetTextureFilter(guiWidgets, TEXTURE_FILTER_POINT);
+    guiIcons = LoadTexture("resources/textures/gui/icons.png");
+    guiSteve = LoadTexture("resources/textures/entity/steve.png");
+    if (guiIcons.id != 0) SetTextureFilter(guiIcons, TEXTURE_FILTER_POINT);
+    if (guiSteve.id != 0) SetTextureFilter(guiSteve, TEXTURE_FILTER_POINT);
 }
 
 static int IsLog(BlockType block)
@@ -315,17 +312,53 @@ static void RememberHeld(Player *player)
     }
 }
 
+static int TextHas(const char *haystack, const char *needle)
+{
+    int i = 0;
+    int j = 0;
+
+    if ((needle == NULL) || (needle[0] == '\0')) return 1;
+    if (haystack == NULL) return 0;
+    for (i = 0; haystack[i] != '\0'; i++)
+    {
+        for (j = 0; needle[j] != '\0'; j++)
+        {
+            char a = haystack[i + j];
+            char b = needle[j];
+            if (a >= 'A' && a <= 'Z') a = (char)(a + 32);
+            if (b >= 'A' && b <= 'Z') b = (char)(b + 32);
+            if (a != b) break;
+        }
+        if (needle[j] == '\0') return 1;
+    }
+    return 0;
+}
+
+static int Catalog(const char *query, BlockType *out, int cap)
+{
+    int i = 0;
+    int n = 0;
+
+    for (i = 1; (i < BLOCK_COUNT) && (n < cap); i++)
+    {
+        BlockType block = (BlockType)i;
+        if (IsWaterBlock(block) && (block != BLOCK_WATER)) continue;
+        if (!TextHas(GetBlockName(block), query)) continue;
+        out[n++] = block;
+    }
+    return n;
+}
+
 static Rectangle GuiOrigin(const Player *player, int *scaleOut, int *panelW)
 {
     int scale = MenuScale();
     int guiW = 176*scale;
-    int extra = 0;
-    int ox = 0;
+    int left = player->recipeBookOpen ? 124*scale : 0;
+    int right = player->showAllItems ? 180*scale : 0;
+    int ox = (GetScreenWidth() - guiW - left - right)/2 + left;
 
-    if (player->recipeBookOpen) extra = 120*scale;
-    ox = (GetScreenWidth() - guiW - extra)/2 + extra;
     if (scaleOut != NULL) *scaleOut = scale;
-    if (panelW != NULL) *panelW = extra;
+    if (panelW != NULL) *panelW = left;
     return (Rectangle){ (float)ox, (float)((GetScreenHeight() - 166*scale)/2), (float)guiW, (float)(166*scale) };
 }
 
@@ -376,40 +409,98 @@ static void DrawFrame(Rectangle box, Color color)
     DrawRectangleLinesEx(box, 2.0f, color);
 }
 
+static void BlitGui(Texture2D tex, int sx, int sy, int sw, int sh, int dx, int dy, int scale)
+{
+    if (tex.id == 0) return;
+    DrawTexturePro(tex,
+        (Rectangle){ (float)sx, (float)sy, (float)sw, (float)sh },
+        (Rectangle){ (float)dx, (float)dy, (float)(sw*scale), (float)(sh*scale) },
+        (Vector2){ 0, 0 }, 0.0f, WHITE);
+}
+
+static void DrawStatusIcon(int sx, int sy, int dx, int dy, int scale)
+{
+    BlitGui(guiIcons, sx, sy, 9, 9, dx, dy, scale);
+}
+
+static void DrawGraySlot(int x, int y, int size, int hot)
+{
+    int rim = size/18;
+    if (rim < 1) rim = 1;
+    DrawRectangle(x, y, size, size, hot ? WHITE : (Color){ 55, 55, 55, 255 });
+    DrawRectangle(x + rim, y + rim, size - 2*rim, size - 2*rim, (Color){ 139, 139, 139, 255 });
+    DrawRectangle(x + rim, y + rim, size - 2*rim, rim, (Color){ 55, 55, 55, 255 });
+    DrawRectangle(x + rim, y + size - 2*rim, size - 2*rim, rim, (Color){ 255, 255, 255, 180 });
+}
+
+static void DrawSteve(int x, int y, int px)
+{
+    int head = 8*px;
+    int bodyW = 8*px;
+    int bodyH = 12*px;
+    int armW = 4*px;
+
+    if (guiSteve.id == 0) return;
+    BlitGui(guiSteve, 8, 8, 8, 8, x, y, px);
+    BlitGui(guiSteve, 40, 8, 8, 8, x, y, px);
+    BlitGui(guiSteve, 20, 20, 8, 12, x, y + head, px);
+    BlitGui(guiSteve, 44, 20, 4, 12, x - armW, y + head, px);
+    BlitGui(guiSteve, 36, 52, 4, 12, x + bodyW, y + head, px);
+    BlitGui(guiSteve, 4, 20, 4, 12, x, y + head + bodyH, px);
+    BlitGui(guiSteve, 20, 52, 4, 12, x + armW, y + head + bodyH, px);
+}
+
 void DrawHotbar(Player *player)
 {
     int scale = MenuScale();
-    int width = 182*scale;
-    int height = 22*scale;
-    int x = (GetScreenWidth() - width)/2;
-    int y = GetScreenHeight() - height;
+    int barW = 182*scale;
+    int barH = 22*scale;
+    int x = (GetScreenWidth() - barW)/2;
+    int y = GetScreenHeight() - barH;
     int i = 0;
-    Rectangle bar = { (float)x, (float)y, (float)width, (float)height };
+    const char *held = NULL;
+    int heldWidth = 0;
 
     LoadGui();
-    if (guiWidgets.id != 0)
+    DrawRectangle(x, y - 6*scale, barW, 5*scale, BLACK);
+    DrawRectangle(x + scale, y - 5*scale, barW - 2*scale, 3*scale, (Color){ 128, 255, 32, 255 });
+
+    for (i = 0; i < 10; i++)
     {
-        DrawTexturePro(guiWidgets, (Rectangle){ 0, 0, 182, 22 }, bar, (Vector2){ 0, 0 }, 0.0f, WHITE);
-        if ((player->hotbarSlot >= 0) && (player->hotbarSlot < 9))
-        {
-            Rectangle sel = {
-                (float)(x + player->hotbarSlot*20*scale - scale),
-                (float)(y - scale),
-                (float)(24*scale),
-                (float)(24*scale)
-            };
-            DrawTexturePro(guiWidgets, (Rectangle){ 0, 22, 24, 23 }, sel, (Vector2){ 0, 0 }, 0.0f, WHITE);
-        }
+        int hx = x + scale + i*8*scale;
+        int hy = y - 16*scale;
+        int fx = x + barW - scale - 9*scale - i*8*scale;
+
+        DrawStatusIcon(16, 0, hx, hy, scale);
+        DrawStatusIcon(52, 0, hx, hy, scale);
+        DrawStatusIcon(16, 9, hx, hy - 10*scale, scale);
+        DrawStatusIcon(16, 27, fx, hy, scale);
+        DrawStatusIcon(52, 27, fx, hy, scale);
+        if (player->inWater) DrawStatusIcon(16, 18, fx, hy - 10*scale, scale);
     }
-    else
-    {
-        DrawRectangleRec(bar, (Color){ 20, 20, 20, 180 });
-    }
+
+    DrawRectangle(x, y, barW, barH, (Color){ 12, 12, 12, 255 });
     for (i = 0; i < 9; i++)
     {
-        Rectangle slot = { (float)(x + 3*scale + i*20*scale), (float)(y + 3*scale), (float)(16*scale), (float)(16*scale) };
-        if (player->hotbar[i] != BLOCK_AIR) DrawIcon(slot, scale, player->hotbar[i], 1);
-        if ((guiWidgets.id == 0) && (i == player->hotbarSlot)) DrawFrame(slot, YELLOW);
+        int sx = x + (1 + i*20)*scale;
+        int sy = y + scale;
+        int inner = 18*scale;
+        Rectangle icon = { (float)(sx + scale), (float)(sy + scale), (float)(16*scale), (float)(16*scale) };
+
+        DrawRectangle(sx, sy, 20*scale, 20*scale, (i == player->hotbarSlot) ? WHITE : (Color){ 90, 90, 90, 255 });
+        DrawRectangle(sx + scale, sy + scale, inner, inner, (Color){ 28, 28, 28, 255 });
+        if (player->hotbar[i] != BLOCK_AIR) DrawIcon(icon, scale, player->hotbar[i], 1);
+    }
+
+    DrawRectangle(x - 26*scale, y + scale, 20*scale, 20*scale, (Color){ 90, 90, 90, 255 });
+    DrawRectangle(x - 25*scale, y + 2*scale, 18*scale, 18*scale, (Color){ 28, 28, 28, 255 });
+
+    if ((player->hotbarSlot >= 0) && (player->hotbarSlot < 9) && (player->hotbar[player->hotbarSlot] != BLOCK_AIR))
+    {
+        held = GetBlockName(player->hotbar[player->hotbarSlot]);
+        heldWidth = MenuTextWidth(held, 8*scale);
+        DrawMenuText(GetScreenWidth()/2 - heldWidth/2 + scale, y - 28*scale + scale, 8*scale, held, BLACK);
+        DrawMenuText(GetScreenWidth()/2 - heldWidth/2, y - 28*scale, 8*scale, held, WHITE);
     }
 }
 
@@ -443,37 +534,122 @@ static void DrawRecipePanel(const Player *player, int panelW, int scale, Rectang
     }
 }
 
+static void DrawSlotContents(Rectangle box, int scale, BlockType block, int count, int hot)
+{
+    DrawGraySlot((int)box.x, (int)box.y, (int)box.width, hot);
+    if ((block != BLOCK_AIR) && (count > 0))
+    {
+        Rectangle icon = { box.x + (float)scale, box.y + (float)scale, box.width - 2.0f*(float)scale, box.height - 2.0f*(float)scale };
+        DrawIcon(icon, scale, block, count);
+    }
+}
+
+static Rectangle SearchPanel(Rectangle gui, int scale)
+{
+    return (Rectangle){ gui.x + gui.width + 4.0f*(float)scale, gui.y, 176.0f*(float)scale, gui.height };
+}
+
+static Rectangle SearchField(Rectangle panel, int scale)
+{
+    return (Rectangle){ panel.x + 8.0f*(float)scale, panel.y + 22.0f*(float)scale, panel.width - 16.0f*(float)scale, 16.0f*(float)scale };
+}
+
+static void DrawSearchPanel(Player *player, Rectangle panel, int scale)
+{
+    BlockType items[512];
+    int count = Catalog(player->itemSearch, items, 512);
+    int cols = 9;
+    int rows = 5;
+    int visible = cols*rows;
+    int maxScroll = 0;
+    int i = 0;
+    Vector2 mouse = GetMousePosition();
+    Rectangle field = SearchField(panel, scale);
+
+    if (count > visible) maxScroll = ((count - visible + cols - 1)/cols)*cols;
+    if (player->itemScroll < 0) player->itemScroll = 0;
+    if (player->itemScroll > maxScroll) player->itemScroll = maxScroll;
+
+    DrawRectangleRec(panel, (Color){ 198, 198, 198, 255 });
+    DrawRectangleLinesEx(panel, (float)scale, (Color){ 55, 55, 55, 255 });
+    DrawMenuText((int)panel.x + 8*scale, (int)panel.y + 6*scale, 8*scale, "Search Items", (Color){ 64, 64, 64, 255 });
+    DrawRectangleRec(field, player->searchFocused ? WHITE : (Color){ 0, 0, 0, 255 });
+    DrawMenuText((int)field.x + 2*scale, (int)field.y + 4*scale, 8*scale,
+        (player->itemSearch[0] != '\0') ? player->itemSearch : "Search...",
+        (player->itemSearch[0] != '\0') ? WHITE : (Color){ 160, 160, 160, 255 });
+    if (player->searchFocused && (player->itemSearch[0] != '\0'))
+    {
+        DrawMenuText((int)field.x + 2*scale, (int)field.y + 4*scale, 8*scale, player->itemSearch, BLACK);
+    }
+
+    for (i = 0; i < visible; i++)
+    {
+        int index = player->itemScroll + i;
+        int col = i%cols;
+        int row = i/cols;
+        Rectangle box = {
+            panel.x + (8 + col*18)*(float)scale,
+            panel.y + (44 + row*18)*(float)scale,
+            18.0f*(float)scale,
+            18.0f*(float)scale
+        };
+        BlockType block = BLOCK_AIR;
+
+        if (index < count) block = items[index];
+        DrawSlotContents(box, scale, block, (block == BLOCK_AIR) ? 0 : 1, CheckCollisionPointRec(mouse, box));
+        if ((block != BLOCK_AIR) && CheckCollisionPointRec(mouse, box))
+        {
+            DrawMenuText((int)panel.x + 8*scale, (int)panel.y + (int)panel.height - 14*scale, 8*scale, GetBlockName(block), (Color){ 64, 64, 64, 255 });
+        }
+    }
+}
+
 void DrawInventory(Player *player)
 {
     int scale = 0;
     int panelW = 0;
     Rectangle gui = GuiOrigin(player, &scale, &panelW);
-    Texture2D sheet = { 0 };
     int row = 0;
     int col = 0;
+    int armor = 0;
     BlockType result = BLOCK_AIR;
     int resultCount = 0;
     Vector2 mouse = GetMousePosition();
+    int portraitX = (int)gui.x + 26*scale;
+    int portraitY = (int)gui.y + 8*scale;
+    int pixel = scale;
+    MenuButton book = { 0 };
+    MenuButton allItems = { 0 };
 
+    if (pixel < 2) pixel = 2;
     LoadGui();
     DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(BLACK, 0.65f));
-    if (player->recipeBookOpen && (panelW > 0)) DrawRecipePanel(player, panelW, scale, gui);
-    else
-    {
-        MenuButton book = { 0 };
-        book.bounds = (Rectangle){ gui.x - (float)(78*scale), gui.y + (float)(8*scale), (float)(74*scale), (float)(20*scale) };
-        book.label = "Recipes";
-        book.enabled = true;
-        book.hovered = CheckCollisionPointRec(mouse, book.bounds);
-        DrawStoneButton(&book, false);
-    }
 
-    sheet = (player->craftSize >= 3) ? guiCrafting : guiInventory;
-    if (sheet.id != 0)
+    book.bounds = (Rectangle){ gui.x - (float)(78*scale), gui.y + (float)(8*scale), (float)(74*scale), (float)(20*scale) };
+    book.label = "Recipes";
+    book.enabled = true;
+    book.hovered = CheckCollisionPointRec(mouse, book.bounds);
+    DrawStoneButton(&book, player->recipeBookOpen);
+    if (player->recipeBookOpen && (panelW > 0)) DrawRecipePanel(player, panelW, scale, gui);
+
+    allItems.bounds = (Rectangle){ gui.x + gui.width - (float)(78*scale), gui.y - (float)(24*scale), (float)(74*scale), (float)(20*scale) };
+    allItems.label = player->showAllItems ? "Close" : "All Items";
+    allItems.enabled = true;
+    allItems.hovered = CheckCollisionPointRec(mouse, allItems.bounds);
+    DrawStoneButton(&allItems, player->showAllItems);
+
+    DrawRectangle((int)gui.x, (int)gui.y, (int)gui.width, (int)gui.height, (Color){ 198, 198, 198, 255 });
+    DrawRectangleLinesEx(gui, (float)scale, (Color){ 55, 55, 55, 255 });
+    DrawMenuText((int)gui.x + 96*scale, (int)gui.y + 6*scale, 8*scale, "Crafting", (Color){ 64, 64, 64, 255 });
+
+    DrawRectangle(portraitX, portraitY, 50*scale, 70*scale, BLACK);
+    DrawSteve(portraitX + 16*pixel, portraitY + 4*pixel, pixel);
+    for (armor = 0; armor < 4; armor++)
     {
-        DrawTexturePro(sheet, (Rectangle){ 0, 0, 176, 166 }, gui, (Vector2){ 0, 0 }, 0.0f, WHITE);
+        Rectangle box = SlotBox(gui, scale, 8, 8 + armor*18);
+        DrawSlotContents(box, scale, BLOCK_AIR, 0, 0);
     }
-    else DrawRectangleRec(gui, (Color){ 198, 198, 198, 240 });
+    DrawSlotContents(SlotBox(gui, scale, 77, 62), scale, BLOCK_AIR, 0, 0);
 
     if (player->craftSize >= 3)
     {
@@ -482,9 +658,8 @@ void DrawInventory(Player *player)
             for (col = 0; col < 3; col++)
             {
                 int index = row*3 + col;
-                Rectangle box = SlotBox(gui, scale, 30 + col*18, 17 + row*18);
-                DrawIcon(box, scale, player->craft[index], player->craftCount[index]);
-                if (CheckCollisionPointRec(mouse, box)) DrawFrame(box, WHITE);
+                Rectangle box = SlotBox(gui, scale, 98 + col*18, 18 + row*18);
+                DrawSlotContents(box, scale, player->craft[index], player->craftCount[index], CheckCollisionPointRec(mouse, box));
             }
         }
     }
@@ -494,16 +669,15 @@ void DrawInventory(Player *player)
         for (col = 0; col < 4; col++)
         {
             Rectangle box = SlotBox(gui, scale, coords[col][0], coords[col][1]);
-            DrawIcon(box, scale, player->craft[col], player->craftCount[col]);
-            if (CheckCollisionPointRec(mouse, box)) DrawFrame(box, WHITE);
+            DrawSlotContents(box, scale, player->craft[col], player->craftCount[col], CheckCollisionPointRec(mouse, box));
         }
     }
 
     MatchCraft(player, &result, &resultCount);
     {
-        Rectangle box = (player->craftSize >= 3) ? SlotBox(gui, scale, 124, 35) : SlotBox(gui, scale, 154, 28);
-        DrawIcon(box, scale, result, resultCount);
-        if ((result != BLOCK_AIR) && CheckCollisionPointRec(mouse, box)) DrawFrame(box, YELLOW);
+        Rectangle box = (player->craftSize >= 3) ? SlotBox(gui, scale, 154, 36) : SlotBox(gui, scale, 154, 28);
+        DrawSlotContents(box, scale, result, resultCount, (result != BLOCK_AIR) && CheckCollisionPointRec(mouse, box));
+        DrawRectangle((int)box.x - 14*scale, (int)box.y + 6*scale, 10*scale, 2*scale, (Color){ 64, 64, 64, 255 });
     }
 
     for (row = 0; row < 3; row++)
@@ -512,28 +686,25 @@ void DrawInventory(Player *player)
         {
             int index = row*9 + col;
             Rectangle box = SlotBox(gui, scale, 8 + col*18, 84 + row*18);
-            if (index < INVENTORY_SIZE) DrawIcon(box, scale, player->inventory.blocks[index], player->inventory.quantities[index]);
-            if (CheckCollisionPointRec(mouse, box)) DrawFrame(box, WHITE);
+            BlockType block = (index < INVENTORY_SIZE) ? player->inventory.blocks[index] : BLOCK_AIR;
+            int count = (index < INVENTORY_SIZE) ? player->inventory.quantities[index] : 0;
+            DrawSlotContents(box, scale, block, count, CheckCollisionPointRec(mouse, box));
         }
     }
     for (col = 0; col < 9; col++)
     {
         Rectangle box = SlotBox(gui, scale, 8 + col*18, 142);
-        DrawIcon(box, scale, player->hotbar[col], (player->hotbar[col] == BLOCK_AIR) ? 0 : 1);
-        if (col == player->hotbarSlot) DrawFrame(box, YELLOW);
-        else if (CheckCollisionPointRec(mouse, box)) DrawFrame(box, WHITE);
+        DrawSlotContents(box, scale, player->hotbar[col], (player->hotbar[col] == BLOCK_AIR) ? 0 : 1,
+            (col == player->hotbarSlot) || CheckCollisionPointRec(mouse, box));
     }
+
+    if (player->showAllItems) DrawSearchPanel(player, SearchPanel(gui, scale), scale);
 
     if ((player->cursorBlock != BLOCK_AIR) && (player->cursorCount > 0))
     {
         Rectangle cursor = { mouse.x - 8.0f*(float)scale, mouse.y - 8.0f*(float)scale, 16.0f*(float)scale, 16.0f*(float)scale };
         DrawIcon(cursor, scale, player->cursorBlock, player->cursorCount);
     }
-
-    DrawMenuText(8*scale, GetScreenHeight() - 12*scale, 8*scale,
-        (player->craftSize >= 3) ? "Crafting table. Pick a recipe or place blocks. E closes."
-                                 : "Pick a recipe or drag blocks into the grid. E on a crafting table opens the 3x3.",
-        (Color){ 224, 224, 224, 255 });
 }
 
 static int HitStorage(Rectangle gui, int scale, Vector2 mouse, int *index)
@@ -583,7 +754,7 @@ static int HitCraft(const Player *player, Rectangle gui, int scale, Vector2 mous
         {
             for (col = 0; col < 3; col++)
             {
-                Rectangle box = SlotBox(gui, scale, 30 + col*18, 17 + row*18);
+                Rectangle box = SlotBox(gui, scale, 98 + col*18, 18 + row*18);
                 if (CheckCollisionPointRec(mouse, box))
                 {
                     *index = row*3 + col;
@@ -610,7 +781,7 @@ static int HitCraft(const Player *player, Rectangle gui, int scale, Vector2 mous
 
 static int HitResult(const Player *player, Rectangle gui, int scale, Vector2 mouse)
 {
-    Rectangle box = (player->craftSize >= 3) ? SlotBox(gui, scale, 124, 35) : SlotBox(gui, scale, 154, 28);
+    Rectangle box = (player->craftSize >= 3) ? SlotBox(gui, scale, 154, 36) : SlotBox(gui, scale, 154, 28);
     return CheckCollisionPointRec(mouse, box);
 }
 
@@ -657,6 +828,57 @@ static void ClickHotbar(Player *player, int index)
     RememberHeld(player);
 }
 
+static int HitCatalog(Player *player, Rectangle panel, int scale, Vector2 mouse, BlockType *block)
+{
+    BlockType items[512];
+    int count = Catalog(player->itemSearch, items, 512);
+    int cols = 9;
+    int rows = 5;
+    int i = 0;
+
+    for (i = 0; i < cols*rows; i++)
+    {
+        int index = player->itemScroll + i;
+        int col = i%cols;
+        int row = i/cols;
+        Rectangle box = {
+            panel.x + (8 + col*18)*(float)scale,
+            panel.y + (44 + row*18)*(float)scale,
+            18.0f*(float)scale,
+            18.0f*(float)scale
+        };
+
+        if (!CheckCollisionPointRec(mouse, box)) continue;
+        if (index >= count) return 0;
+        *block = items[index];
+        return 1;
+    }
+    return 0;
+}
+
+static void TypeSearch(Player *player)
+{
+    int len = (int)strlen(player->itemSearch);
+    int key = GetCharPressed();
+
+    while (key > 0)
+    {
+        if ((key >= 32) && (key < 127) && (len < (int)sizeof(player->itemSearch) - 1))
+        {
+            player->itemSearch[len] = (char)key;
+            len++;
+            player->itemSearch[len] = '\0';
+            player->itemScroll = 0;
+        }
+        key = GetCharPressed();
+    }
+    if ((IsKeyPressed(KEY_BACKSPACE) || IsKeyPressedRepeat(KEY_BACKSPACE)) && (len > 0))
+    {
+        player->itemSearch[len - 1] = '\0';
+        player->itemScroll = 0;
+    }
+}
+
 void InventoryHandleInput(Player *player)
 {
     int scale = 0;
@@ -665,30 +887,61 @@ void InventoryHandleInput(Player *player)
     Vector2 mouse = GetMousePosition();
     int index = 0;
     MenuButton book = { 0 };
+    MenuButton allItems = { 0 };
+    Rectangle panel = { 0 };
+    BlockType picked = BLOCK_AIR;
 
     if (!player->inventoryOpen) return;
     gui = GuiOrigin(player, &scale, &panelW);
-    if (!player->recipeBookOpen)
-    {
-        book.bounds = (Rectangle){ gui.x - (float)(78*scale), gui.y + (float)(8*scale), (float)(74*scale), (float)(20*scale) };
-        book.label = "Recipes";
-        book.enabled = true;
-    }
-    else
-    {
-        book.bounds = (Rectangle){ gui.x - (float)panelW, gui.y - (float)(24*scale), (float)(panelW - 4*scale), (float)(20*scale) };
-        book.label = "Recipe Book";
-        book.enabled = true;
-    }
+    book.bounds = (Rectangle){ gui.x - (float)(78*scale), gui.y + (float)(8*scale), (float)(74*scale), (float)(20*scale) };
+    book.label = "Recipes";
+    book.enabled = true;
+    allItems.bounds = (Rectangle){ gui.x + gui.width - (float)(78*scale), gui.y - (float)(24*scale), (float)(74*scale), (float)(20*scale) };
+    allItems.label = player->showAllItems ? "Close" : "All Items";
+    allItems.enabled = true;
     UpdateMenuButton(&book);
+    UpdateMenuButton(&allItems);
     if (book.clicked)
     {
         player->recipeBookOpen = !player->recipeBookOpen;
         PlaySound(fxCoin);
         return;
     }
+    if (allItems.clicked)
+    {
+        player->showAllItems = !player->showAllItems;
+        player->searchFocused = player->showAllItems;
+        PlaySound(fxCoin);
+        return;
+    }
+
+    if (player->showAllItems)
+    {
+        panel = SearchPanel(gui, scale);
+        if (CheckCollisionPointRec(mouse, panel))
+        {
+            float wheel = GetMouseWheelMove();
+            if (wheel > 0.0f) player->itemScroll -= 9;
+            if (wheel < 0.0f) player->itemScroll += 9;
+            if (player->itemScroll < 0) player->itemScroll = 0;
+        }
+    }
+    if (player->searchFocused) TypeSearch(player);
     if (!IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) return;
 
+    if (player->showAllItems && CheckCollisionPointRec(mouse, SearchField(panel, scale)))
+    {
+        player->searchFocused = 1;
+        return;
+    }
+    player->searchFocused = 0;
+    if (player->showAllItems && HitCatalog(player, panel, scale, mouse, &picked))
+    {
+        player->cursorBlock = picked;
+        player->cursorCount = 64;
+        PlaySound(fxCoin);
+        return;
+    }
     index = HitRecipe(player, panelW, scale, gui, mouse);
     if (index >= 0)
     {

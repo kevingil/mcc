@@ -321,6 +321,10 @@ typedef struct {
     int cursorCount;
     int recipeBookOpen;
     int recipeIndex;
+    int showAllItems;
+    int itemScroll;
+    char itemSearch[32];
+    int searchFocused;
 } Player;
 
 //----------------------------------------------------------------------------------

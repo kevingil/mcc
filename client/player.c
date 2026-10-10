@@ -68,6 +68,10 @@ void InitPlayer(Player* player, Vector3 startPosition) {
     player->cursorCount = 0;
     player->recipeBookOpen = 0;
     player->recipeIndex = -1;
+    player->showAllItems = 0;
+    player->itemScroll = 0;
+    player->itemSearch[0] = '\0';
+    player->searchFocused = 0;
     for (int craftIndex = 0; craftIndex < 9; craftIndex++) {
         player->craft[craftIndex] = BLOCK_AIR;
         player->craftCount[craftIndex] = 0;
@@ -152,7 +156,7 @@ void HandlePlayerInput(Player* player) {
     HandlePlayerMouseLook(player);
     HandlePlayerMovement(player);
     
-    if (IsKeyPressed(KEY_E)) {
+    if (IsKeyPressed(KEY_E) && !player->searchFocused) {
         if (player->inventoryOpen) InventoryClose(player);
         else {
             player->inventoryOpen = true;
@@ -563,14 +567,16 @@ void DrawPlayerUI(Player* player) {
 }
 
 void DrawCrosshair(void) {
-    int screenWidth = GetScreenWidth();
-    int screenHeight = GetScreenHeight();
-    int centerX = screenWidth / 2;
-    int centerY = screenHeight / 2;
-    int size = 10;
-    
-    DrawLine(centerX - size, centerY, centerX + size, centerY, WHITE);
-    DrawLine(centerX, centerY - size, centerX, centerY + size, WHITE);
+    int centerX = GetScreenWidth()/2;
+    int centerY = GetScreenHeight()/2;
+    int arm = 6;
+    int gap = 3;
+    int thick = 2;
+
+    DrawRectangle(centerX - gap - arm, centerY - thick/2, arm, thick, WHITE);
+    DrawRectangle(centerX + gap, centerY - thick/2, arm, thick, WHITE);
+    DrawRectangle(centerX - thick/2, centerY - gap - arm, thick, arm, WHITE);
+    DrawRectangle(centerX - thick/2, centerY + gap, thick, arm, WHITE);
 }
 
 void DrawBlockOutline(BlockPos position) {
