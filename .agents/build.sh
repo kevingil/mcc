@@ -9,4 +9,6 @@ cmake -S . -B build
 cmake --build build --parallel "$(nproc)"
 
 test -x "$ROOT/build/mcc/mcc"
+test -x "$ROOT/build/server/opencraft-server"
 echo "built $ROOT/build/mcc/mcc"
+echo "built $ROOT/build/server/opencraft-server"

@@ -20,7 +20,7 @@ The Cloud Agent image points `c++` at clang, and that clang links against the GC
 bash .agents/build.sh
 ```
 
-Runs `cmake -S . -B build` and `cmake --build build`. The first configure downloads raylib 5.0. The binary is `build/mcc/mcc`.
+Runs `cmake -S . -B build` and `cmake --build build`. The first configure downloads raylib 5.0. The client binary is `build/mcc/mcc`. The server binary is `build/server/opencraft-server`.
 
 ## Run
 
@@ -29,6 +29,12 @@ Resources load relative to the working directory. Start the game from `client/`:
 ```sh
 cd client
 ../build/mcc/mcc
+```
+
+The server has no resources and no window:
+
+```sh
+./build/server/opencraft-server
 ```
 
 Enter on the title screen starts the world. The rest of the controls are in the project README. With no sound card, raylib prints ALSA warnings and continues.

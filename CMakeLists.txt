@@ -66,6 +66,10 @@ add_executable(save_format_test
 target_include_directories(save_format_test PRIVATE client)
 target_link_libraries(save_format_test ZLIB::ZLIB)
 
+add_executable(opencraft-server server/main.c)
+set_target_properties(opencraft-server PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/server)
+
 # Web Configurations
 if ("${PLATFORM}" STREQUAL "Web")
     # Tell Emscripten to build an example.html file.
