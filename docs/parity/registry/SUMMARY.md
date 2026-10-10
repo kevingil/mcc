@@ -10,7 +10,7 @@ IDs from the misode/mcmeta `summary` registries dump fetched 2026-10-10. That br
 | Biomes | 68 | 68 missing |
 | Enchantments | 43 | missing |
 | Mob effects | 41 | missing |
-| Attributes | 40 | movement is hardcoded in `src/player.c`, not an attribute |
+| Attributes | 40 | movement is hardcoded in `client/player.c`, not an attribute |
 | Fluids | 5 | water partial, lava missing |
 | Dimensions | 3 | overworld only, and only y 0..127 |
 | Worldgen structures | 52 | missing |

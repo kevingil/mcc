@@ -8,7 +8,7 @@ Registries list ids. This file lists the systems an id plugs into. Status is for
 
 | System | Status | Now | First slice |
 | --- | --- | --- | --- |
-| Fixed 20 Hz tick | missing | Frame-time integration in `src/player.c` | S01 |
+| Fixed 20 Hz tick | missing | Frame-time integration in `client/player.c` | S01 |
 | Player movement and jump | partial | Box and eye height match. Speeds do not | S02 |
 | Block properties | missing | Solid versus air, plus a water check | S03 |
 | Item stacks | partial | Cubes and two bucket types share `BlockType` | S04 |
@@ -39,7 +39,7 @@ Registries list ids. This file lists the systems an id plugs into. Status is for
 | Potions and effects | missing | 41 effect ids |
 | Experience | missing | |
 
-92 mob ids are listed in `registry/entities.md`. Textures under `src/resources/textures/entity/` do not count as progress.
+92 mob ids are listed in `registry/entities.md`. Textures under `client/resources/textures/entity/` do not count as progress.
 
 ## World
 

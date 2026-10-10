@@ -17,7 +17,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 STATUS_RE = re.compile(r"^- `([a-z0-9_./]+)` - (missing|cube|partial|done)\s*$")
 
-# Full cubes in src/voxel_types.h. Water is partial (flow), not a cube id.
+# Full cubes in client/voxel_types.h. Water is partial (flow), not a cube id.
 CUBE_BLOCKS = {
     "acacia_leaves", "acacia_log", "acacia_planks",
     "andesite", "bedrock",
@@ -164,7 +164,7 @@ def write_grouped(path, title, ids, status_of, blurb):
         "Status:",
         "",
         "- `missing` means OpenCraft does not simulate it.",
-        "- `cube` means a full-cube stand-in exists in `src/voxel_types.h`. No states, drops, or hardness.",
+        "- `cube` means a full-cube stand-in exists in `client/voxel_types.h`. No states, drops, or hardness.",
         "- `partial` means some behavior exists and the slice is not done.",
         "- `done` means the owning slice's checks passed.",
         "",
@@ -210,7 +210,7 @@ def write_entities(path, ids):
         "",
         SOURCE,
         "",
-        "Textures under `src/resources/textures/entity/` are Good Vibes art. They are not a simulation.",
+        "Textures under `client/resources/textures/entity/` are Good Vibes art. They are not a simulation.",
         "",
         "Edit the status word only: `missing`, `cube`, `partial`, `done`.",
         "",
@@ -328,7 +328,7 @@ def main():
         f"| Biomes | {len(registries['worldgen/biome'])} | {biome_counts['missing']} missing |",
         f"| Enchantments | {len(registries['enchantment'])} | missing |",
         f"| Mob effects | {len(registries['mob_effect'])} | missing |",
-        f"| Attributes | {len(registries['attribute'])} | movement is hardcoded in `src/player.c`, not an attribute |",
+        f"| Attributes | {len(registries['attribute'])} | movement is hardcoded in `client/player.c`, not an attribute |",
         f"| Fluids | {len(registries['fluid'])} | water partial, lava missing |",
         f"| Dimensions | {len(registries['dimension'])} | overworld only, and only y 0..127 |",
         f"| Worldgen structures | {len(registries['worldgen/structure'])} | missing |",
