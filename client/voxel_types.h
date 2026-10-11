@@ -272,10 +272,17 @@ typedef struct {
 //----------------------------------------------------------------------------------
 // Inventory System
 //----------------------------------------------------------------------------------
-#define INVENTORY_SIZE 45  // 9x5 grid
+// The save and the protocol keep 45 slots. The survival screen shows the
+// first STORAGE_SIZE of them as its three storage rows.
+#define INVENTORY_SIZE 45
+#define STORAGE_SIZE 27
 #define HOTBAR_SIZE 9
 #define INVENTORY_ROWS 5
 #define INVENTORY_COLS 9
+
+// Same numbers as GameType in level.dat.
+#define GAME_MODE_SURVIVAL 0
+#define GAME_MODE_CREATIVE 1
 
 typedef struct {
     BlockType blocks[INVENTORY_SIZE];
@@ -308,12 +315,27 @@ typedef struct {
     BlockType selectedBlock;
     int hotbarSlot;
     BlockType hotbar[9];
-    
+    int hotbarCount[9];
+    BlockType offhand;
+    int offhandCount;
+
+    int gameMode;
+    int airSupply;      // Ticks of air, 300 when full
+    int attackTicks;    // Ticks since the last swing at nothing
+
     // Inventory system
     Inventory inventory;
     bool inventoryOpen;
-    int inventorySelectedSlot;
-    int inventoryScrollOffset;
+    int craftSize;
+    BlockType craft[9];
+    int craftCount[9];
+    BlockType cursorBlock;
+    int cursorCount;
+    int recipeBookOpen;
+    int creativeTab;
+    float creativeScroll;
+    char itemSearch[51];
+    int searchFocused;
 } Player;
 
 //----------------------------------------------------------------------------------

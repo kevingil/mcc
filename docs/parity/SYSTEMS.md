@@ -13,7 +13,7 @@ Registries list ids. This file lists the systems an id plugs into. Status is for
 | Block properties | missing | Solid versus air, plus a water check | S03 |
 | Item stacks | partial | Cubes and two bucket types share `BlockType` | S04 |
 | Breaking and drops | missing | A click deletes the cube | S05 |
-| Inventory | partial | 9 hotbar slots and a creative 9x5 grid | S06 |
+| Inventory | partial | Survival screen uses the container texture. Hotbar uses the widget selector. 2x2 crafting sits in the inventory. | S06 |
 | Light | missing | Meshes are fully lit | S07 |
 | Height and sections | missing | y 0..127 stored | S08 |
 | Block states | missing | One mesh shape per id | S09 |
@@ -26,7 +26,7 @@ Registries list ids. This file lists the systems an id plugs into. Status is for
 
 | System | Status | First slice |
 | --- | --- | --- |
-| Crafting | missing | S18, 2x2 and the crafting table, planks and sticks |
+| Crafting | partial | Inventory 2x2 and the crafting table 3x3. Recipe list selects logs, planks, sandstone, furnace, and chest. Not the full recipe book. |
 | Tools and combat stats | missing | S19 |
 | Hunger and food | missing | S20 |
 | Smelting | missing | S21 |
@@ -45,7 +45,7 @@ Registries list ids. This file lists the systems an id plugs into. Status is for
 
 | System | Status | First slice |
 | --- | --- | --- |
-| Biomes | missing | S25, four biomes |
+| Biomes | partial | Every registry id has a surface palette. `MCC_BIOME_TOUR` walks them. Normal seeds also pick a palette. Not climate, rivers, or structures. |
 | Ores | missing | ore cubes exist and do not generate |
 | Structures | missing | 52 structure ids |
 | Nether | missing | S26 |
@@ -59,14 +59,15 @@ Registries list ids. This file lists the systems an id plugs into. Status is for
 
 | System | Status | First slice |
 | --- | --- | --- |
-| Headless server | missing | S12 |
-| Protocol v1 | missing | S13 |
-| Direct connect | missing | S14 |
-| Server list | missing | S15 |
-| Authoritative edits | missing | S16 |
+| Headless server | partial | `opencraft-server` binds 0.0.0.0:25570 and counts a 20 Hz loop. It does not simulate the voxel world yet. S12 |
+| Protocol v1 | partial | Length-prefixed frames. Hello, account, join, block, inventory, and a block-edit snapshot. No section chunks and no Input simulation. S13 |
+| Direct connect | partial | Direct Connection asks for address and port. The account form is not on that screen. S14 |
+| Server list | partial | Saved servers live in `servers.txt`. Join uses the account you already signed in with. S15 |
+| Authoritative edits | partial | Place and break are stored in `opencraft.db` and broadcast. The placing client also draws the edit immediately. S16 |
 | Other players | missing | S17 |
+| Account inventory | partial | Hotbar stacks and the selected slot reload from `opencraft.db` for that account. The creative grid is stored once the client has sent it. |
 | Realms | missing | stays a coming-soon screen. Not a hosting target |
-| Authentication | missing | firewall or tunnel in v1. No Microsoft accounts |
+| Authentication | partial | Username and password hash, optional email, created in the client. No Microsoft accounts. HTTP signup is not this path. |
 
 ## Presentation
 

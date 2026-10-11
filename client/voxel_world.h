@@ -19,6 +19,7 @@ typedef struct {
 //----------------------------------------------------------------------------------
 // World Management Functions
 //----------------------------------------------------------------------------------
+int GameRenderDistance(void);
 void InitVoxelWorld(VoxelWorld* world);
 void UpdateVoxelWorld(VoxelWorld* world, Vector3 playerPosition);
 void UnloadVoxelWorld(VoxelWorld* world);

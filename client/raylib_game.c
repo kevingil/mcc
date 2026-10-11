@@ -13,6 +13,7 @@
 #include "menu_ui.h"
 #include "client_log.h"
 #include <stdio.h>
+#include <stdlib.h>
 
 #if defined(PLATFORM_WEB)
     #include <emscripten/emscripten.h>
@@ -30,8 +31,8 @@ Sound fxCoin = { 0 };
 //----------------------------------------------------------------------------------
 // Local Variables Definition (local to this module)
 //----------------------------------------------------------------------------------
-static const int screenWidth = 1280;
-static const int screenHeight = 720;
+static int screenWidth = 1280;
+static int screenHeight = 720;
 
 // Required variables to manage screen transitions (fade-in, fade-out)
 static float transAlpha = 0.0f;
@@ -67,7 +68,18 @@ int main(void)
     ClientLogInit("logs");
     ClientLog("OpenCraft started");
 
+    if (getenv("MCC_WIDTH") != NULL) screenWidth = atoi(getenv("MCC_WIDTH"));
+    if (getenv("MCC_HEIGHT") != NULL) screenHeight = atoi(getenv("MCC_HEIGHT"));
+    if (screenWidth < 640) screenWidth = 640;
+    if (screenHeight < 480) screenHeight = 480;
+
     InitWindow(screenWidth, screenHeight, "OpenCraft");
+    if (getenv("MCC_WINDOW_X") != NULL)
+    {
+        int windowY = 40;
+        if (getenv("MCC_WINDOW_Y") != NULL) windowY = atoi(getenv("MCC_WINDOW_Y"));
+        SetWindowPosition(atoi(getenv("MCC_WINDOW_X")), windowY);
+    }
 
     InitAudioDevice();      // Initialize audio device
 
@@ -80,9 +92,22 @@ int main(void)
     SetMusicVolume(music, 1.0f);
     PlayMusicStream(music);
 
-    // Setup and init first screen
-    currentScreen = LOGO;
-    InitLogoScreen();
+    // Setup and init first screen. MCC_SKIP_LOGO is for the multiplayer demo.
+    if (getenv("MCC_BIOME_TOUR") != NULL)
+    {
+        currentScreen = GAMEPLAY;
+        InitGameplayScreen();
+    }
+    else if (getenv("MCC_SKIP_LOGO") != NULL)
+    {
+        currentScreen = TITLE;
+        InitTitleScreen();
+    }
+    else
+    {
+        currentScreen = LOGO;
+        InitLogoScreen();
+    }
 
     // Disable ESC key for closing window (we handle it in pause menu)
     SetExitKey(KEY_NULL);
@@ -288,7 +313,8 @@ static void UpdateDrawFrame(void)
             {
                 UpdateMultiplayerScreen();
 
-                if (FinishMultiplayerScreen()) TransitionToScreen(TITLE);
+                if (FinishMultiplayerScreen() == 1) TransitionToScreen(TITLE);
+                else if (FinishMultiplayerScreen() == 2) TransitionToScreen(GAMEPLAY);
 
             } break;
             case GAMEPLAY:
