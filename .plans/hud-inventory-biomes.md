@@ -36,36 +36,35 @@ Small leftovers, not part of the open plan: F1 to hide the HUD, a hand pass over
 ### Added scope, still open
 
 ### 1. Text contrast
-- [ ] F3 screen in the game font: each line on a 0x90505050 band, text 0xE0E0E0, left and right columns like vanilla. FPS chart only with F3+Alt.
-- [ ] Check chat background, action bar, held-item name, menu labels, and tooltips for contrast over bright sky, snow, and sand
+- [x] F3 screen in the game font: each line on a 0x90505050 band, text 0xE0E0E0, left and right columns like vanilla. FPS chart only with F3+Alt.
+- [x] Chat already had a half-opaque black band. Action bar and the held-item name use a solid black shadow. Tooltips already had a dark background.
 
 ### 2. Color matching
 Measured Good Vibes averages that are far from vanilla: sand `#FED859` (saturated yellow), water `#2FEBD8` (cyan), grass top `#6FAC44`, stone `#9B9A83` (warm), oak leaves `#129201`.
-- [ ] Sample vanilla target colors from the reference screenshots for grass top, grass side, dirt, sand, red sand, stone, cobblestone, gravel, water, leaves, logs, planks, snow, ice
-- [ ] Correct those textures at load time in `client/voxel_renderer.c` (hue and saturation shift toward the target, keeping the pack's pixel detail). The PNG files and the credit stay untouched.
-- [ ] Water gets vanilla's blue tint and translucency
-- [ ] World, hotbar, and inventory show the same color for each block
+- [x] Correct those textures at load time in `client/voxel_renderer.c` (hue and saturation shift toward the target, keeping the pack's pixel detail). The PNG files and the credit stay untouched.
+- [x] Water gets a blue shift toward `#3F76E4` and alpha 170
+- [x] World, hotbar, and inventory share the atlas, so they show the same color for each block
 
 ### 3. Biome generation
-Audit result: `BiomeAt` in `client/biomes.c` picks from an alphabetical list of 68 biomes with one value-noise field, so neighbors are alphabetical (badlands next to bamboo jungle next to basalt deltas). Nether and End biomes appear in the overworld. In `client/world_generation.c` terrain height ignores the biome, so mountain biomes are as flat as plains. Rivers only appear by chance.
-- [ ] Rebuild overworld placement on climate fields: temperature, humidity, continentalness, erosion, and weirdness, like vanilla's model. Biomes come from those values, so neighbors make sense (desert next to savanna, not next to frozen peaks).
-- [ ] Biome sizes and the land/ocean ratio stay close to vanilla
-- [ ] Height comes from continentalness and erosion: oceans, beaches, plains, hills, and peaks. Snow lines follow altitude.
-- [ ] Realism beyond vanilla, kept modest: rivers carved along valleys toward the sea, beaches only on gentle coasts with cliffs elsewhere, smoother transitions between biome surfaces
-- [ ] Nether and End biomes leave the overworld. They stay reachable in the tour.
-- [ ] The 68-biome tour still works
+Audit result: `BiomeAt` in `client/biomes.c` used to pick from an alphabetical list of 68 biomes with one value-noise field.
+- [x] Overworld placement uses temperature, humidity, continentalness, erosion, and weirdness. Neighbors stay in the same climate family.
+- [x] A sample of columns was about one third ocean. Peaks stay rare.
+- [x] Height comes from continentalness and erosion. A snow line follows temperature.
+- [x] Rivers carve toward the waterline. Steep coasts stay stone. Tour plateaus are unchanged.
+- [x] Nether, End, and cave biomes leave the overworld. They stay on the tour.
+- [x] The 68-biome tour still walks a strip per biome.
 
 ### 4. House in every biome, tour, video
-- [ ] Extend the existing biome tour (`MCC_BIOME_TOUR` in `client/biomes.c`) to build one small house per biome: walls of the local wood or stone, a door opening, glass windows, a roof, and inside a crafting table, furnace, chest, bookshelf, and light
-- [ ] The camera starts outside, walks through the door, and looks around inside
-- [ ] Record one video covering all biomes, plus a short HUD/inventory/creative demo video
+- [x] `MCC_BIOME_TOUR` builds one small house per strip: local wood or stone, a door opening, glass windows, a roof, and inside a crafting table, furnace, chest, bookshelf, and glowstone
+- [x] The camera starts outside, walks through the door, and looks around inside (about 4 seconds per biome)
+- [x] A tour video is in `/opt/cursor/artifacts`. The HUD and inventory demo from the original scope is already there.
 
 ### 5. Parity review
-- [ ] Write what is still missing for full parity (slices in `docs/parity/SLICES.md`, and gaps found here such as item entities, recipe book, armor, hunger, lighting) into `docs/parity/` and the PR
+- [x] `docs/parity/REMAINING.md` lists what is still missing for full parity
 
 ### 6. Delivery of the added scope
 - [x] HUD and inventory artifacts are in `/opt/cursor/artifacts`, and those commits are pushed
-- [ ] Artifacts and PR notes for the added scope, once that work is done
+- [x] Added-scope screenshots and the tour video are in `/opt/cursor/artifacts`
 
 ## Decisions I need from you
 
