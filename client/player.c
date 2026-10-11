@@ -4,7 +4,7 @@
 #include "net_session.h"
 #include "voxel_renderer.h"
 #include "biomes.h"
-#include "world_generation.h"
+#include "biome_houses.h"
 #include "raymath.h"
 #include "rlgl.h"
 #include <math.h>
@@ -186,14 +186,7 @@ void SetPlayerLook(Player* player, float yaw, float pitch) {
 
 void UpdatePlayer(Player* player, VoxelWorld* world) {
     if (BiomeTourActive()) {
-        int columnX = BiomeTourIndex()*BIOME_STRIDE + BIOME_STRIDE/2;
-        int columnZ = BIOME_STRIDE/2;
-
-        player->position = (Vector3){ columnX + 0.5f, GetSurfaceLevel(columnX, columnZ), columnZ + 0.5f };
-        player->velocity = (Vector3){ 0.0f, 0.0f, 0.0f };
-        player->onGround = true;
-        SetPlayerLook(player, 0.15f, -0.62f);
-        BiomeTourTick(GetFrameTime());
+        BiomeHouseTourStep(player, GetFrameTime());
         return;
     }
 
