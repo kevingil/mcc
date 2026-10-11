@@ -681,6 +681,244 @@ static Image HoneycombTile(void)
     return image;
 }
 
+// Good Vibes bakes its own hues. At atlas load, move a tile's mean onto a
+// vanilla color and scale each pixel's offset from that mean so the detail
+// stays. new = target + (pixel - average)*saturation, clamped to 0..255.
+// World, hotbar, and inventory share this atlas, so this is the only tint.
+typedef enum TileRecolorKind
+{
+    RECOLOR_VISIBLE = 0,
+    RECOLOR_GRASS_SIDE,
+    RECOLOR_BUCKET_WATER
+} TileRecolorKind;
+
+typedef struct TileColorTarget
+{
+    const char *name;
+    unsigned char r;
+    unsigned char g;
+    unsigned char b;
+    int alpha;
+    bool alphaIfOpaque;
+    float saturation;
+    TileRecolorKind kind;
+} TileColorTarget;
+
+static int ClampChannel(int value)
+{
+    if (value < 0) return 0;
+    if (value > 255) return 255;
+    return value;
+}
+
+static void WriteShiftedPixel(Color *pixel, Color source, float averageR, float averageG, float averageB, Color target, float saturation, int alpha)
+{
+    float nextR = target.r + (source.r - averageR)*saturation;
+    float nextG = target.g + (source.g - averageG)*saturation;
+    float nextB = target.b + (source.b - averageB)*saturation;
+
+    pixel->r = (unsigned char)ClampChannel((int)(nextR + 0.5f));
+    pixel->g = (unsigned char)ClampChannel((int)(nextG + 0.5f));
+    pixel->b = (unsigned char)ClampChannel((int)(nextB + 0.5f));
+    if (alpha >= 0) pixel->a = (unsigned char)alpha;
+}
+
+static bool ImageIsFullyOpaque(const Color *pixels, int count)
+{
+    if ((pixels == NULL) || (count <= 0)) return false;
+    for (int i = 0; i < count; i++)
+    {
+        if (pixels[i].a != 255) return false;
+    }
+    return true;
+}
+
+static bool PixelMatches(Color color, TileRecolorKind kind)
+{
+    if (color.a == 0) return false;
+    if (kind == RECOLOR_GRASS_SIDE) return false;
+    if (kind == RECOLOR_BUCKET_WATER) return (color.b > color.r) && (color.b > 160);
+    return true;
+}
+
+static void ShiftMatchingPixels(Color *pixels, int count, TileRecolorKind kind, Color target, float saturation, int alpha)
+{
+    bool selected[TEXTURE_SIZE*TEXTURE_SIZE] = { 0 };
+    double sumR = 0.0;
+    double sumG = 0.0;
+    double sumB = 0.0;
+    int selectedCount = 0;
+    float averageR = 0.0f;
+    float averageG = 0.0f;
+    float averageB = 0.0f;
+
+    if ((pixels == NULL) || (count <= 0) || (count > TEXTURE_SIZE*TEXTURE_SIZE)) return;
+
+    for (int i = 0; i < count; i++)
+    {
+        selected[i] = PixelMatches(pixels[i], kind);
+        if (!selected[i]) continue;
+        sumR += pixels[i].r;
+        sumG += pixels[i].g;
+        sumB += pixels[i].b;
+        selectedCount++;
+    }
+    if (selectedCount == 0) return;
+
+    averageR = (float)(sumR/selectedCount);
+    averageG = (float)(sumG/selectedCount);
+    averageB = (float)(sumB/selectedCount);
+
+    for (int i = 0; i < count; i++)
+    {
+        Color source = pixels[i];
+
+        if (!selected[i]) continue;
+        WriteShiftedPixel(&pixels[i], source, averageR, averageG, averageB, target, saturation, alpha);
+    }
+}
+
+// Grass fringe (G > R and G > B) moves toward foliage green. The baked dirt
+// underneath uses the same mean as the dirt tile. Classify first so the two
+// shifts do not restamp each other.
+static void RecolorGrassSideTile(Color *pixels, int count, Color grassTarget, Color dirtTarget, float saturation)
+{
+    unsigned char region[TEXTURE_SIZE*TEXTURE_SIZE] = { 0 };
+    double grassSumR = 0.0;
+    double grassSumG = 0.0;
+    double grassSumB = 0.0;
+    double dirtSumR = 0.0;
+    double dirtSumG = 0.0;
+    double dirtSumB = 0.0;
+    int grassCount = 0;
+    int dirtCount = 0;
+    float grassAverageR = 0.0f;
+    float grassAverageG = 0.0f;
+    float grassAverageB = 0.0f;
+    float dirtAverageR = 0.0f;
+    float dirtAverageG = 0.0f;
+    float dirtAverageB = 0.0f;
+
+    if ((pixels == NULL) || (count <= 0) || (count > TEXTURE_SIZE*TEXTURE_SIZE)) return;
+
+    for (int i = 0; i < count; i++)
+    {
+        Color color = pixels[i];
+
+        if (color.a == 0) continue;
+        if ((color.g > color.r) && (color.g > color.b))
+        {
+            region[i] = 1;
+            grassSumR += color.r;
+            grassSumG += color.g;
+            grassSumB += color.b;
+            grassCount++;
+        }
+        else
+        {
+            region[i] = 2;
+            dirtSumR += color.r;
+            dirtSumG += color.g;
+            dirtSumB += color.b;
+            dirtCount++;
+        }
+    }
+
+    if (grassCount > 0)
+    {
+        grassAverageR = (float)(grassSumR/grassCount);
+        grassAverageG = (float)(grassSumG/grassCount);
+        grassAverageB = (float)(grassSumB/grassCount);
+    }
+    if (dirtCount > 0)
+    {
+        dirtAverageR = (float)(dirtSumR/dirtCount);
+        dirtAverageG = (float)(dirtSumG/dirtCount);
+        dirtAverageB = (float)(dirtSumB/dirtCount);
+    }
+
+    for (int i = 0; i < count; i++)
+    {
+        Color source = pixels[i];
+
+        if ((region[i] == 1) && (grassCount > 0))
+        {
+            WriteShiftedPixel(&pixels[i], source, grassAverageR, grassAverageG, grassAverageB, grassTarget, saturation, -1);
+        }
+        else if ((region[i] == 2) && (dirtCount > 0))
+        {
+            WriteShiftedPixel(&pixels[i], source, dirtAverageR, dirtAverageG, dirtAverageB, dirtTarget, saturation, -1);
+        }
+    }
+}
+
+static void RecolorBlockTile(Image *image, const char *name)
+{
+    // spruce_leaves and jungle_leaves are not names BlockFaceTexture returns.
+    // dark_oak_leaves uses the oak foliage green. water_bucket is an item
+    // icon: only its blue pixels move, and they move to a lighter blue.
+    static const TileColorTarget targets[] =
+    {
+        { "grass_block_top", 0x7C, 0xB3, 0x42, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "grass_block_side", 0x7C, 0xB3, 0x42, -1, false, 0.70f, RECOLOR_GRASS_SIDE },
+        { "dirt", 0x86, 0x60, 0x43, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "sand", 0xDB, 0xD3, 0xA0, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "red_sand", 0xBE, 0x66, 0x21, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "stone", 0x7E, 0x7E, 0x7E, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "cobblestone", 0x7A, 0x7A, 0x7A, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "gravel", 0x83, 0x7F, 0x7C, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "oak_leaves", 0x5B, 0x9A, 0x32, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "birch_leaves", 0x6B, 0x8F, 0x4E, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "acacia_leaves", 0x8F, 0x9A, 0x32, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "dark_oak_leaves", 0x5B, 0x9A, 0x32, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "oak_log", 0x6D, 0x54, 0x34, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "oak_log_top", 0x9A, 0x7B, 0x4F, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "oak_planks", 0xB8, 0x94, 0x5F, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "snow", 0xF4, 0xF7, 0xF7, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "ice", 0xA0, 0xD0, 0xDC, 200, true, 0.70f, RECOLOR_VISIBLE },
+        { "packed_ice", 0x8B, 0xBC, 0xD8, 200, true, 0.70f, RECOLOR_VISIBLE },
+        { "blue_ice", 0x74, 0xA6, 0xD4, 200, true, 0.70f, RECOLOR_VISIBLE },
+        { "water_still", 0x3F, 0x76, 0xE4, 170, false, 0.70f, RECOLOR_VISIBLE },
+        { "water_flow", 0x3F, 0x76, 0xE4, 170, false, 0.70f, RECOLOR_VISIBLE },
+        { "water_bucket", 0x5B, 0x96, 0xD6, -1, false, 0.70f, RECOLOR_BUCKET_WATER }
+    };
+    Color *pixels = NULL;
+    int count = 0;
+    int writeAlpha = -1;
+    const TileColorTarget *target = NULL;
+
+    if ((image == NULL) || (image->data == NULL) || (name == NULL)) return;
+    if (image->format != PIXELFORMAT_UNCOMPRESSED_R8G8B8A8) return;
+
+    pixels = (Color *)image->data;
+    count = image->width*image->height;
+    if ((count <= 0) || (count > TEXTURE_SIZE*TEXTURE_SIZE)) return;
+
+    for (int i = 0; i < (int)(sizeof(targets)/sizeof(targets[0])); i++)
+    {
+        if (strcmp(targets[i].name, name) == 0)
+        {
+            target = &targets[i];
+            break;
+        }
+    }
+    if (target == NULL) return;
+
+    writeAlpha = target->alpha;
+    if ((target->alphaIfOpaque) && !ImageIsFullyOpaque(pixels, count)) writeAlpha = -1;
+
+    if (target->kind == RECOLOR_GRASS_SIDE)
+    {
+        Color grassTarget = { target->r, target->g, target->b, 255 };
+        Color dirtTarget = { 0x86, 0x60, 0x43, 255 };
+
+        RecolorGrassSideTile(pixels, count, grassTarget, dirtTarget, target->saturation);
+        return;
+    }
+
+    ShiftMatchingPixels(pixels, count, target->kind, (Color){ target->r, target->g, target->b, 255 }, target->saturation, writeAlpha);
+}
+
 void LoadBlockTextures(void) {
     const char *names[MAX_BLOCK_TEXTURES] = { 0 };
     int nameCount = 0;
@@ -702,6 +940,7 @@ void LoadBlockTextures(void) {
         Image tile = { 0 };
         int x = (i%texturesPerRow)*TEXTURE_SIZE;
         int y = (i/texturesPerRow)*TEXTURE_SIZE;
+        bool loaded = false;
 
         if (strcmp(names[i], "missing") == 0) tile = MissingTile();
         else if (strncmp(names[i], "chest_", 6) == 0)
@@ -715,6 +954,7 @@ void LoadBlockTextures(void) {
             if (tile.data == NULL) tile = LoadTextureFile("%s/item/%s.png", names[i]);
         }
 
+        loaded = (tile.data != NULL);
         if (tile.data == NULL)
         {
             tile = MissingTile();
@@ -722,6 +962,7 @@ void LoadBlockTextures(void) {
         }
         else if (i > 0) successfulLoads++;
         if ((tile.width != TEXTURE_SIZE) || (tile.height != TEXTURE_SIZE)) ImageResize(&tile, TEXTURE_SIZE, TEXTURE_SIZE);
+        if (loaded && (strcmp(names[i], "missing") != 0) && (strcmp(names[i], "honeycomb_block") != 0)) RecolorBlockTile(&tile, names[i]);
 
         ImageDraw(&atlasImage, tile, (Rectangle){ 0, 0, TEXTURE_SIZE, TEXTURE_SIZE },
             (Rectangle){ (float)x, (float)y, TEXTURE_SIZE, TEXTURE_SIZE }, WHITE);
