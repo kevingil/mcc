@@ -72,23 +72,19 @@ awk -v m="$TITLE_MEAN" 'BEGIN { if (m+0 < 0.05) exit 1 }' \
 echo "title mean=$TITLE_MEAN"
 
 # XTEST key events (no --window) are what GLFW treats as real input.
-# Repeat only while the title screen is still up; an extra Enter in-game leaves the world.
+# One Enter opens the world list. The next Enter plays the selected world.
+# Do not send a third Enter: in game that leaves the world.
 loaded=0
-for _ in $(seq 1 6); do
-  xdotool windowfocus --sync "$WID"
-  xdotool key --clearmodifiers Return
-  sleep 1.5
-  if grep -q "Block textures loaded" "$OUT_DIR/game.log"; then
-    loaded=1
-    break
-  fi
-  import -window root "$OUT_DIR/title-probe.png"
-  probe="$(convert "$OUT_DIR/title-probe.png" -format '%[fx:mean]' info:)"
-  # Settled title screen mean is about 0.52. Leaving it means the key landed.
-  if ! awk -v m="$probe" 'BEGIN { exit !(m+0 > 0.45 && m+0 < 0.58) }'; then
-    break
-  fi
-done
+xdotool windowfocus --sync "$WID"
+xdotool key --clearmodifiers Return
+# The fade into the world list is about a second. A second Enter during it is dropped.
+sleep 2.5
+xdotool windowfocus --sync "$WID"
+xdotool key --clearmodifiers Return
+sleep 1.2
+if grep -q "Block textures loaded" "$OUT_DIR/game.log"; then
+  loaded=1
+fi
 
 if [ "$loaded" -ne 1 ]; then
   for _ in $(seq 1 90); do

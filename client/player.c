@@ -1,6 +1,12 @@
 #include "player.h"
+#include <stddef.h>
+#include "gui.h"
+#include "net_session.h"
 #include "voxel_renderer.h"
+#include "biomes.h"
+#include "biome_houses.h"
 #include "raymath.h"
+#include "rlgl.h"
 #include <math.h>
 
 //----------------------------------------------------------------------------------
@@ -12,6 +18,26 @@
 #define PLAYER_WIDTH 0.6f
 #define REACH_DISTANCE 5.0f
 #define MOVEMENT_DAMPING 0.1f
+
+typedef struct {
+    BlockType block;
+    int count;
+} StarterStack;
+
+// Broken blocks do not drop anything yet, so survival starts with building
+// stock in the storage rows instead of an empty inventory.
+static const StarterStack starterKit[] = {
+    { BLOCK_OAK_PLANKS, 64 }, { BLOCK_OAK_LOG, 32 }, { BLOCK_BIRCH_LOG, 32 },
+    { BLOCK_STONE, 64 }, { BLOCK_STONE_BRICKS, 64 }, { BLOCK_SANDSTONE, 48 },
+    { BLOCK_GLASS, 32 }, { BLOCK_CRAFTING_TABLE, 1 }, { BLOCK_FURNACE, 1 },
+    { BLOCK_CHEST, 2 }, { BLOCK_BOOKSHELF, 8 }, { BLOCK_GLOWSTONE, 16 },
+    { BLOCK_WHITE_WOOL, 24 }, { BLOCK_RED_WOOL, 24 }, { BLOCK_BLUE_WOOL, 24 },
+    { BLOCK_YELLOW_WOOL, 24 }, { BLOCK_GRAVEL, 64 }, { BLOCK_QUARTZ_BLOCK, 16 },
+    { BLOCK_OBSIDIAN, 10 }, { BLOCK_IRON_BLOCK, 9 }, { BLOCK_GOLD_BLOCK, 9 },
+    { BLOCK_DIAMOND_BLOCK, 3 }
+};
+
+static bool clickGrabbedMouse = false;
 
 //----------------------------------------------------------------------------------
 // Player Functions
@@ -55,30 +81,91 @@ void InitPlayer(Player* player, Vector3 startPosition) {
     player->hotbar[6] = BLOCK_COBBLESTONE;
     player->hotbar[7] = BLOCK_SAND;
     player->hotbar[8] = BLOCK_BRICKS;
+    for (int i = 0; i < HOTBAR_SIZE; i++) {
+        player->hotbarCount[i] = GuiMaxStack(player->hotbar[i]);
+    }
+    player->offhand = BLOCK_AIR;
+    player->offhandCount = 0;
+
+    player->gameMode = GAME_MODE_SURVIVAL;
+    player->airSupply = 300;
+    player->attackTicks = 0;
     
     // Initialize inventory system
     player->inventoryOpen = false;
-    player->inventorySelectedSlot = 0;
-    player->inventoryScrollOffset = 0;
-    
-    // Fill inventory with all available blocks
-    int slotIndex = 0;
-    for (int i = 1; i < BLOCK_COUNT && slotIndex < INVENTORY_SIZE; i++) {
-        BlockType filled = (BlockType)i;
-        if (IsWaterBlock(filled) && (filled != BLOCK_WATER)) continue;
-        if ((filled == BLOCK_BUCKET) || (filled == BLOCK_WATER_BUCKET)) continue;
-        player->inventory.blocks[slotIndex] = filled;
-        player->inventory.quantities[slotIndex] = 64; // Full stack
-        slotIndex++;
+    player->craftSize = 2;
+    player->cursorBlock = BLOCK_AIR;
+    player->cursorCount = 0;
+    player->recipeBookOpen = 0;
+    player->creativeTab = 0;
+    player->creativeScroll = 0.0f;
+    player->itemSearch[0] = '\0';
+    player->searchFocused = 0;
+    for (int craftIndex = 0; craftIndex < 9; craftIndex++) {
+        player->craft[craftIndex] = BLOCK_AIR;
+        player->craftCount[craftIndex] = 0;
     }
     
-    // Fill remaining slots with air
-    for (int i = slotIndex; i < INVENTORY_SIZE; i++) {
+    for (int i = 0; i < INVENTORY_SIZE; i++) {
         player->inventory.blocks[i] = BLOCK_AIR;
         player->inventory.quantities[i] = 0;
     }
+    for (int i = 0; i < (int)(sizeof(starterKit)/sizeof(starterKit[0])); i++) {
+        player->inventory.blocks[i] = starterKit[i].block;
+        player->inventory.quantities[i] = starterKit[i].count;
+    }
     
     DisableCursor(); // Lock cursor for first-person view
+}
+
+void SelectHotbarSlot(Player* player, int slot) {
+    if ((slot < 0) || (slot >= HOTBAR_SIZE)) return;
+    player->hotbarSlot = slot;
+    player->selectedBlock = (player->hotbarCount[slot] > 0)? player->hotbar[slot] : BLOCK_AIR;
+}
+
+static int StowInto(BlockType *slot, int *count, BlockType block, int amount) {
+    int room = GuiMaxStack(block) - *count;
+
+    if ((*slot != block) || (*count <= 0) || (room <= 0)) return amount;
+    if (room > amount) room = amount;
+    *count += room;
+    return amount - room;
+}
+
+static int StowEmpty(BlockType *slot, int *count, BlockType block, int amount) {
+    int placed = GuiMaxStack(block);
+
+    if ((*count > 0) && (*slot != BLOCK_AIR)) return amount;
+    if (placed > amount) placed = amount;
+    *slot = block;
+    *count = placed;
+    return amount - placed;
+}
+
+// Same order as returning items to the inventory in vanilla: the selected
+// slot, the offhand, then every slot from the hotbar onward, first topping up
+// matching stacks and then filling empty ones.
+int StowItem(Player* player, BlockType block, int count) {
+    int i = 0;
+
+    if ((block == BLOCK_AIR) || (count <= 0)) return 0;
+    count = StowInto(&player->hotbar[player->hotbarSlot], &player->hotbarCount[player->hotbarSlot], block, count);
+    count = StowInto(&player->offhand, &player->offhandCount, block, count);
+    for (i = 0; (i < HOTBAR_SIZE) && (count > 0); i++) {
+        count = StowInto(&player->hotbar[i], &player->hotbarCount[i], block, count);
+    }
+    for (i = 0; (i < STORAGE_SIZE) && (count > 0); i++) {
+        count = StowInto(&player->inventory.blocks[i], &player->inventory.quantities[i], block, count);
+    }
+    for (i = 0; (i < HOTBAR_SIZE) && (count > 0); i++) {
+        count = StowEmpty(&player->hotbar[i], &player->hotbarCount[i], block, count);
+    }
+    for (i = 0; (i < STORAGE_SIZE) && (count > 0); i++) {
+        count = StowEmpty(&player->inventory.blocks[i], &player->inventory.quantities[i], block, count);
+    }
+    SelectHotbarSlot(player, player->hotbarSlot);
+    return count;
 }
 
 void SetPlayerLook(Player* player, float yaw, float pitch) {
@@ -98,6 +185,12 @@ void SetPlayerLook(Player* player, float yaw, float pitch) {
 }
 
 void UpdatePlayer(Player* player, VoxelWorld* world) {
+    if (BiomeTourActive()) {
+        BiomeHouseTourStep(player, GetFrameTime());
+        return;
+    }
+
+    clickGrabbedMouse = false;
     HandlePlayerInput(player);
     UpdatePlayerPhysics(player, world);
     UpdatePlayerInteraction(player, world);
@@ -107,68 +200,48 @@ void UpdatePlayer(Player* player, VoxelWorld* world) {
 }
 
 void HandlePlayerInput(Player* player) {
+    float wheel = 0.0f;
+    bool creative = player->gameMode == GAME_MODE_CREATIVE;
+
     HandlePlayerMouseLook(player);
     HandlePlayerMovement(player);
-    
-    // Inventory toggle with E key
-    if (IsKeyPressed(KEY_E)) {
-        player->inventoryOpen = !player->inventoryOpen;
-        if (player->inventoryOpen) {
-            EnableCursor(); // Show cursor in inventory
-        } else {
-            DisableCursor(); // Hide cursor when closing inventory
-        }
-    }
-    
-    // Inventory navigation (only when inventory is open)
+
     if (player->inventoryOpen) {
-        // Arrow key navigation
-        if (IsKeyPressed(KEY_LEFT)) {
-            player->inventorySelectedSlot = (player->inventorySelectedSlot - 1 + INVENTORY_SIZE) % INVENTORY_SIZE;
-        }
-        if (IsKeyPressed(KEY_RIGHT)) {
-            player->inventorySelectedSlot = (player->inventorySelectedSlot + 1) % INVENTORY_SIZE;
-        }
-        if (IsKeyPressed(KEY_UP)) {
-            player->inventorySelectedSlot = (player->inventorySelectedSlot - INVENTORY_COLS + INVENTORY_SIZE) % INVENTORY_SIZE;
-        }
-        if (IsKeyPressed(KEY_DOWN)) {
-            player->inventorySelectedSlot = (player->inventorySelectedSlot + INVENTORY_COLS) % INVENTORY_SIZE;
-        }
-        
-        // Select block from inventory with Enter
-        if (IsKeyPressed(KEY_ENTER) && player->inventory.blocks[player->inventorySelectedSlot] != BLOCK_AIR) {
-            player->selectedBlock = player->inventory.blocks[player->inventorySelectedSlot];
-            // Place in current hotbar slot (replace whatever is there)
-            player->hotbar[player->hotbarSlot] = player->selectedBlock;
-        }
-        
-        // Mouse click selection in inventory
-        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-            Vector2 mousePos = GetMousePosition();
-            int mouseSlot = GetInventorySlotAtMouse(mousePos);
-            if (mouseSlot >= 0 && mouseSlot < INVENTORY_SIZE) {
-                player->inventorySelectedSlot = mouseSlot;
-                if (player->inventory.blocks[mouseSlot] != BLOCK_AIR) {
-                    player->selectedBlock = player->inventory.blocks[mouseSlot];
-                    // Place in current hotbar slot (replace whatever is there)
-                    player->hotbar[player->hotbarSlot] = player->selectedBlock;
-                }
-            }
-        }
+        InventoryHandleInput(player);
+        return;
     }
-    
-    // Hotbar selection (only when inventory is closed)
-    if (!player->inventoryOpen) {
-        for (int i = 0; i < 9; i++) {
-            if (IsKeyPressed(KEY_ONE + i)) {
-                player->hotbarSlot = i;
-                player->selectedBlock = player->hotbar[i];
-            }
-        }
+    if (!IsCursorHidden() && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        DisableCursor();
+        clickGrabbedMouse = true;
+        return;
     }
-    
-    // Note: ESC key handling moved to screen_gameplay.c for pause menu
+    if (IsKeyPressed(KEY_E)) {
+        InventoryOpen(player, 2);
+        return;
+    }
+
+    for (int i = 0; i < HOTBAR_SIZE; i++) {
+        if (!IsKeyPressed(KEY_ONE + i)) continue;
+        if (creative && IsKeyDown(KEY_X)) InventoryLoadHotbar(player, i);
+        else if (creative && IsKeyDown(KEY_C)) InventorySaveHotbar(player, i);
+        else SelectHotbarSlot(player, i);
+    }
+
+    wheel = GetMouseWheelMove();
+    if (wheel > 0.0f) SelectHotbarSlot(player, (player->hotbarSlot + HOTBAR_SIZE - 1)%HOTBAR_SIZE);
+    else if (wheel < 0.0f) SelectHotbarSlot(player, (player->hotbarSlot + 1)%HOTBAR_SIZE);
+
+    if (IsKeyPressed(KEY_F)) {
+        int slot = player->hotbarSlot;
+        BlockType held = player->hotbar[slot];
+        int heldCount = player->hotbarCount[slot];
+
+        player->hotbar[slot] = player->offhand;
+        player->hotbarCount[slot] = player->offhandCount;
+        player->offhand = held;
+        player->offhandCount = heldCount;
+        SelectHotbarSlot(player, slot);
+    }
 }
 
 void HandlePlayerMovement(Player* player) {
@@ -345,19 +418,25 @@ bool CheckCollision(Player* player, VoxelWorld* world, Vector3 newPosition) {
     return false; // No collision
 }
 
+static void CommitBlock(VoxelWorld* world, BlockPos pos, BlockType block);
+
 void UpdatePlayerInteraction(Player* player, VoxelWorld* world) {
+    BlockType target = BLOCK_AIR;
+
     UpdateBlockTarget(player, world);
-    
-    if (IsCursorHidden()) {
-        // Block breaking (left click)
-        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-            HandleBlockBreaking(player, world);
-        }
-        
-        // Block placement (right click)
-        if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) {
-            HandleBlockPlacement(player, world);
-        }
+    if (!IsCursorHidden() || player->inventoryOpen || clickGrabbedMouse) return;
+    if (player->hasTarget) target = GetBlock(world, player->targetBlock);
+
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        // Swinging at air or water restarts the attack cooldown.
+        if (IsBlockSolid(target)) HandleBlockBreaking(player, world);
+        else player->attackTicks = 0;
+    }
+    if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) {
+        bool sneaking = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+
+        if ((target == BLOCK_CRAFTING_TABLE) && !sneaking) InventoryOpen(player, 3);
+        else HandleBlockPlacement(player, world);
     }
 }
 
@@ -369,16 +448,61 @@ void UpdateBlockTarget(Player* player, VoxelWorld* world) {
     player->hasTarget = RaycastToBlock(rayOrigin, rayDirection, world, &player->targetBlock, &hitNormal);
 }
 
+static void CommitBlock(VoxelWorld* world, BlockPos pos, BlockType block)
+{
+    SetBlock(world, pos, block);
+    NetSessionLocalBlock(pos.x, pos.y, pos.z, (int)block);
+}
+
+static bool HasItem(Player* player, BlockType block) {
+    if ((player->offhand == block) && (player->offhandCount > 0)) return true;
+    for (int i = 0; i < HOTBAR_SIZE; i++) {
+        if ((player->hotbar[i] == block) && (player->hotbarCount[i] > 0)) return true;
+    }
+    for (int i = 0; i < STORAGE_SIZE; i++) {
+        if ((player->inventory.blocks[i] == block) && (player->inventory.quantities[i] > 0)) return true;
+    }
+    return false;
+}
+
+static bool HasRoomFor(Player* player, BlockType block) {
+    for (int i = 0; i < HOTBAR_SIZE; i++) {
+        if ((player->hotbarCount[i] <= 0) || (player->hotbar[i] == BLOCK_AIR)) return true;
+        if ((player->hotbar[i] == block) && (player->hotbarCount[i] < GuiMaxStack(block))) return true;
+    }
+    for (int i = 0; i < STORAGE_SIZE; i++) {
+        if ((player->inventory.quantities[i] <= 0) || (player->inventory.blocks[i] == BLOCK_AIR)) return true;
+        if ((player->inventory.blocks[i] == block) && (player->inventory.quantities[i] < GuiMaxStack(block))) return true;
+    }
+    return false;
+}
+
+// Creative keeps the empty bucket and adds one filled bucket if there is none.
+// Survival turns a single bucket into the filled one, or splits one off a stack.
 static void UseBucket(Player* player, VoxelWorld* world) {
+    int slot = player->hotbarSlot;
     BlockType target = BLOCK_AIR;
 
     if (!player->hasTarget) return;
     target = GetBlock(world, player->targetBlock);
     if (target != BLOCK_WATER) return;
 
-    SetBlock(world, player->targetBlock, BLOCK_AIR);
-    player->hotbar[player->hotbarSlot] = BLOCK_WATER_BUCKET;
-    player->selectedBlock = BLOCK_WATER_BUCKET;
+    if (player->gameMode == GAME_MODE_CREATIVE) {
+        CommitBlock(world, player->targetBlock, BLOCK_AIR);
+        if (!HasItem(player, BLOCK_WATER_BUCKET)) StowItem(player, BLOCK_WATER_BUCKET, 1);
+        return;
+    }
+    if (player->hotbarCount[slot] > 1) {
+        if (!HasRoomFor(player, BLOCK_WATER_BUCKET)) return;
+        CommitBlock(world, player->targetBlock, BLOCK_AIR);
+        player->hotbarCount[slot]--;
+        StowItem(player, BLOCK_WATER_BUCKET, 1);
+        return;
+    }
+    CommitBlock(world, player->targetBlock, BLOCK_AIR);
+    player->hotbar[slot] = BLOCK_WATER_BUCKET;
+    player->hotbarCount[slot] = 1;
+    SelectHotbarSlot(player, slot);
 }
 
 static void PlaceWaterBucket(Player* player, VoxelWorld* world) {
@@ -398,9 +522,11 @@ static void PlaceWaterBucket(Player* player, VoxelWorld* world) {
     if ((there != BLOCK_AIR) && !IsWaterBlock(there)) return;
     if (there == BLOCK_WATER) return;
 
-    SetBlock(world, placePos, BLOCK_WATER);
+    CommitBlock(world, placePos, BLOCK_WATER);
+    if (player->gameMode == GAME_MODE_CREATIVE) return;
     player->hotbar[player->hotbarSlot] = BLOCK_BUCKET;
-    player->selectedBlock = BLOCK_BUCKET;
+    player->hotbarCount[player->hotbarSlot] = 1;
+    SelectHotbarSlot(player, player->hotbarSlot);
 }
 
 void HandleBlockPlacement(Player* player, VoxelWorld* world) {
@@ -441,7 +567,17 @@ void HandleBlockPlacement(Player* player, VoxelWorld* world) {
         );
         
         if (!wouldIntersectPlayer && GetBlock(world, placePos) == BLOCK_AIR) {
-            SetBlock(world, placePos, player->selectedBlock);
+            int slot = player->hotbarSlot;
+
+            CommitBlock(world, placePos, player->selectedBlock);
+            if (player->gameMode != GAME_MODE_CREATIVE) {
+                player->hotbarCount[slot]--;
+                if (player->hotbarCount[slot] <= 0) {
+                    player->hotbarCount[slot] = 0;
+                    player->hotbar[slot] = BLOCK_AIR;
+                }
+                SelectHotbarSlot(player, slot);
+            }
         }
     }
 }
@@ -452,7 +588,7 @@ void HandleBlockBreaking(Player* player, VoxelWorld* world) {
     BlockType currentBlock = GetBlock(world, player->targetBlock);
     if (IsWaterBlock(currentBlock)) return;
     if (currentBlock != BLOCK_AIR) {
-        SetBlock(world, player->targetBlock, BLOCK_AIR);
+        CommitBlock(world, player->targetBlock, BLOCK_AIR);
     }
 }
 
@@ -493,243 +629,20 @@ bool RaycastToBlock(Vector3 origin, Vector3 direction, VoxelWorld* world, BlockP
 //----------------------------------------------------------------------------------
 // UI Functions
 //----------------------------------------------------------------------------------
-void DrawBlockDebugInfo(Player* player, VoxelWorld* world) {
-    if (!player->hasTarget) return;
-    
-    // Get block information
-    BlockType targetBlock = GetBlock(world, player->targetBlock);
-    if (targetBlock == BLOCK_AIR) return;
-    
-    const char* blockName = GetBlockName(targetBlock);
-    
-    // Get texture name for the top face (most representative)
-    const char* textureName = GetBlockTextureName(targetBlock, FACE_TOP);
-    
-    // Draw semi-transparent background
-    int panelWidth = 300;
-    int panelHeight = 80;
-    int screenWidth = GetScreenWidth();
-    int x = screenWidth - panelWidth - 20;
-    int y = 20;
-    
-    DrawRectangle(x, y, panelWidth, panelHeight, (Color){0, 0, 0, 150});
-    DrawRectangleLines(x, y, panelWidth, panelHeight, WHITE);
-    
-    // Draw debug text
-    DrawText("Block Debug Info", x + 10, y + 10, 18, YELLOW);
-    DrawText(TextFormat("Name: %s", blockName), x + 10, y + 30, 16, WHITE);
-    DrawText(TextFormat("Texture: %s.png", textureName), x + 10, y + 50, 16, LIGHTGRAY);
-    
-    // Draw block position
-    DrawText(TextFormat("Pos: (%d, %d, %d)", 
-             player->targetBlock.x, player->targetBlock.y, player->targetBlock.z), 
-             x + 10, y + 70, 14, GRAY);
-}
-
-void DrawPlayerUI(Player* player) {
-    DrawCrosshair();
-    DrawHotbar(player);
-    
-    if (player->hasTarget) {
-        DrawBlockOutline(player->targetBlock);
-    }
-    
-    // Draw inventory if open
-    if (player->inventoryOpen) {
-        DrawInventory(player);
-    }
-}
-
-void DrawCrosshair(void) {
-    int screenWidth = GetScreenWidth();
-    int screenHeight = GetScreenHeight();
-    int centerX = screenWidth / 2;
-    int centerY = screenHeight / 2;
-    int size = 10;
-    
-    DrawLine(centerX - size, centerY, centerX + size, centerY, WHITE);
-    DrawLine(centerX, centerY - size, centerX, centerY + size, WHITE);
-}
-
-void DrawHotbar(Player* player) {
-    int screenWidth = GetScreenWidth();
-    int screenHeight = GetScreenHeight();
-    int slotSize = 40;
-    int hotbarWidth = 9 * slotSize;
-    int startX = (screenWidth - hotbarWidth) / 2;
-    int startY = screenHeight - slotSize - 20;
-    
-    // Get texture atlas for drawing block textures
-    Texture2D textureAtlas = GetTextureAtlas();
-    
-    for (int i = 0; i < 9; i++) {
-        int x = startX + i * slotSize;
-        int y = startY;
-        
-        // Draw slot background
-        Color slotColor = (i == player->hotbarSlot) ? YELLOW : GRAY;
-        DrawRectangle(x, y, slotSize, slotSize, slotColor);
-        DrawRectangleLines(x, y, slotSize, slotSize, WHITE);
-        
-        // Draw block texture or color fallback
-        if (player->hotbar[i] != BLOCK_AIR) {
-            if (textureAtlas.id > 0) {
-                // Get texture coordinates for the block (use top face for UI)
-                float u, v, w, h;
-                GetBlockTextureUV(player->hotbar[i], FACE_TOP, &u, &v, &w, &h);
-                
-                // Convert normalized coordinates to pixel coordinates
-                Rectangle sourceRect = {
-                    u * textureAtlas.width,
-                    v * textureAtlas.height,
-                    w * textureAtlas.width,
-                    h * textureAtlas.height
-                };
-                
-                // Draw the texture scaled to fit the slot
-                Rectangle destRect = {x + 5, y + 5, slotSize - 10, slotSize - 10};
-                DrawTexturePro(textureAtlas, sourceRect, destRect, (Vector2){0, 0}, 0.0f, WHITE);
-            } else {
-                // Fallback to color if texture not available
-                Color blockColor = GetBlockColor(player->hotbar[i]);
-                DrawRectangle(x + 5, y + 5, slotSize - 10, slotSize - 10, blockColor);
-            }
-        }
-        
-        // Draw slot number
-        DrawText(TextFormat("%d", i + 1), x + 2, y + 2, 10, WHITE);
-    }
-}
-
+// Black at 40% alpha, a hair larger than the block so it does not z-fight.
 void DrawBlockOutline(BlockPos position) {
-    Vector3 blockPos = {position.x, position.y, position.z};
-    Vector3 size = {1.0f, 1.0f, 1.0f};
-    DrawCubeWires(Vector3Add(blockPos, Vector3Scale(size, 0.5f)), size.x, size.y, size.z, RED);
+    Vector3 center = { position.x + 0.5f, position.y + 0.5f, position.z + 0.5f };
+
+    rlDrawRenderBatchActive();
+    rlSetLineWidth(2.5f);
+    DrawCubeWires(center, 1.004f, 1.004f, 1.004f, (Color){ 0, 0, 0, 102 });
+    rlDrawRenderBatchActive();
+    rlSetLineWidth(1.0f);
 }
 
 //----------------------------------------------------------------------------------
 // Inventory UI Functions
 //----------------------------------------------------------------------------------
-void DrawInventory(Player* player) {
-    int screenWidth = GetScreenWidth();
-    int screenHeight = GetScreenHeight();
-    
-    // Inventory background
-    int inventoryWidth = 600;
-    int inventoryHeight = 400;
-    int inventoryX = (screenWidth - inventoryWidth) / 2;
-    int inventoryY = (screenHeight - inventoryHeight) / 2;
-    
-    // Draw semi-transparent background
-    DrawRectangle(0, 0, screenWidth, screenHeight, Fade(BLACK, 0.5f));
-    
-    // Draw inventory window
-    DrawRectangle(inventoryX, inventoryY, inventoryWidth, inventoryHeight, (Color){50, 50, 50, 240});
-    DrawRectangleLines(inventoryX, inventoryY, inventoryWidth, inventoryHeight, WHITE);
-    
-    // Title
-    DrawText("INVENTORY", inventoryX + 20, inventoryY + 15, 24, WHITE);
-    DrawText("Use arrow keys to navigate, ENTER to select, E to close", inventoryX + 20, inventoryY + 45, 16, LIGHTGRAY);
-    
-    // Calculate slot dimensions
-    int slotSize = 50;
-    int slotSpacing = 5;
-    int startX = inventoryX + 50;
-    int startY = inventoryY + 80;
-    
-    // Get texture atlas for drawing block textures
-    Texture2D textureAtlas = GetTextureAtlas();
-    
-    // Draw inventory grid
-    for (int row = 0; row < INVENTORY_ROWS; row++) {
-        for (int col = 0; col < INVENTORY_COLS; col++) {
-            int slotIndex = row * INVENTORY_COLS + col;
-            int x = startX + col * (slotSize + slotSpacing);
-            int y = startY + row * (slotSize + slotSpacing);
-            
-            // Slot background
-            Color slotColor = (slotIndex == player->inventorySelectedSlot) ? YELLOW : GRAY;
-            DrawRectangle(x, y, slotSize, slotSize, slotColor);
-            DrawRectangleLines(x, y, slotSize, slotSize, WHITE);
-            
-            // Draw block if not air
-            if (player->inventory.blocks[slotIndex] != BLOCK_AIR) {
-                if (textureAtlas.id > 0) {
-                    // Get texture coordinates for the block (use top face for UI)
-                    float u, v, w, h;
-                    GetBlockTextureUV(player->inventory.blocks[slotIndex], FACE_TOP, &u, &v, &w, &h);
-                    
-                    // Convert normalized coordinates to pixel coordinates
-                    Rectangle sourceRect = {
-                        u * textureAtlas.width,
-                        v * textureAtlas.height,
-                        w * textureAtlas.width,
-                        h * textureAtlas.height
-                    };
-                    
-                    // Draw the texture scaled to fit the slot
-                    Rectangle destRect = {x + 5, y + 5, slotSize - 10, slotSize - 10};
-                    DrawTexturePro(textureAtlas, sourceRect, destRect, (Vector2){0, 0}, 0.0f, WHITE);
-                } else {
-                    // Fallback to color if texture not available
-                    Color blockColor = GetBlockColor(player->inventory.blocks[slotIndex]);
-                    DrawRectangle(x + 5, y + 5, slotSize - 10, slotSize - 10, blockColor);
-                }
-                
-                // Draw quantity if more than 1
-                if (player->inventory.quantities[slotIndex] > 1) {
-                    DrawText(TextFormat("%d", player->inventory.quantities[slotIndex]), 
-                             x + slotSize - 15, y + slotSize - 15, 12, WHITE);
-                }
-            }
-        }
-    }
-    
-    // Draw selected block info
-    if (player->inventory.blocks[player->inventorySelectedSlot] != BLOCK_AIR) {
-        const char* blockName = GetBlockName(player->inventory.blocks[player->inventorySelectedSlot]);
-        DrawText(TextFormat("Selected: %s", blockName), 
-                 inventoryX + 20, inventoryY + inventoryHeight - 80, 18, WHITE);
-        DrawText(TextFormat("Quantity: %d", player->inventory.quantities[player->inventorySelectedSlot]), 
-                 inventoryX + 20, inventoryY + inventoryHeight - 60, 16, LIGHTGRAY);
-    }
-    
-    // Instructions
-    DrawText("Click on a block to select it", inventoryX + 20, inventoryY + inventoryHeight - 40, 14, LIGHTGRAY);
-    DrawText("Selected blocks will be added to your hotbar", inventoryX + 20, inventoryY + inventoryHeight - 25, 14, LIGHTGRAY);
-}
-
-int GetInventorySlotAtMouse(Vector2 mousePos) {
-    int screenWidth = GetScreenWidth();
-    int screenHeight = GetScreenHeight();
-    
-    int inventoryWidth = 600;
-    int inventoryHeight = 400;
-    int inventoryX = (screenWidth - inventoryWidth) / 2;
-    int inventoryY = (screenHeight - inventoryHeight) / 2;
-    
-    int slotSize = 50;
-    int slotSpacing = 5;
-    int startX = inventoryX + 50;
-    int startY = inventoryY + 80;
-    
-    // Check if mouse is within inventory area
-    if (mousePos.x < startX || mousePos.x > startX + INVENTORY_COLS * (slotSize + slotSpacing) ||
-        mousePos.y < startY || mousePos.y > startY + INVENTORY_ROWS * (slotSize + slotSpacing)) {
-        return -1;
-    }
-    
-    // Calculate which slot the mouse is over
-    int col = (mousePos.x - startX) / (slotSize + slotSpacing);
-    int row = (mousePos.y - startY) / (slotSize + slotSpacing);
-    
-    if (col >= 0 && col < INVENTORY_COLS && row >= 0 && row < INVENTORY_ROWS) {
-        return row * INVENTORY_COLS + col;
-    }
-    
-    return -1;
-}
-
 const char* GetBlockName(BlockType block) {
     if (IsWaterBlock(block)) return "Water";
     switch (block) {
@@ -775,14 +688,14 @@ const char* GetBlockName(BlockType block) {
         case BLOCK_DIAMOND_ORE: return "Diamond Ore";
         case BLOCK_REDSTONE_ORE: return "Redstone Ore";
         case BLOCK_EMERALD_ORE: return "Emerald Ore";
-        case BLOCK_LAPIS_ORE: return "Lapis Ore";
-        case BLOCK_IRON_BLOCK: return "Iron Block";
-        case BLOCK_GOLD_BLOCK: return "Gold Block";
-        case BLOCK_DIAMOND_BLOCK: return "Diamond Block";
-        case BLOCK_EMERALD_BLOCK: return "Emerald Block";
-        case BLOCK_REDSTONE_BLOCK: return "Redstone Block";
-        case BLOCK_LAPIS_BLOCK: return "Lapis Block";
-        case BLOCK_COAL_BLOCK: return "Coal Block";
+        case BLOCK_LAPIS_ORE: return "Lapis Lazuli Ore";
+        case BLOCK_IRON_BLOCK: return "Block of Iron";
+        case BLOCK_GOLD_BLOCK: return "Block of Gold";
+        case BLOCK_DIAMOND_BLOCK: return "Block of Diamond";
+        case BLOCK_EMERALD_BLOCK: return "Block of Emerald";
+        case BLOCK_REDSTONE_BLOCK: return "Block of Redstone";
+        case BLOCK_LAPIS_BLOCK: return "Block of Lapis Lazuli";
+        case BLOCK_COAL_BLOCK: return "Block of Coal";
         case BLOCK_WHITE_WOOL: return "White Wool";
         case BLOCK_ORANGE_WOOL: return "Orange Wool";
         case BLOCK_MAGENTA_WOOL: return "Magenta Wool";
@@ -815,6 +728,23 @@ const char* GetBlockName(BlockType block) {
         case BLOCK_GREEN_CONCRETE: return "Green Concrete";
         case BLOCK_RED_CONCRETE: return "Red Concrete";
         case BLOCK_BLACK_CONCRETE: return "Black Concrete";
+        case BLOCK_TERRACOTTA: return "Terracotta";
+        case BLOCK_WHITE_TERRACOTTA: return "White Terracotta";
+        case BLOCK_ORANGE_TERRACOTTA: return "Orange Terracotta";
+        case BLOCK_MAGENTA_TERRACOTTA: return "Magenta Terracotta";
+        case BLOCK_LIGHT_BLUE_TERRACOTTA: return "Light Blue Terracotta";
+        case BLOCK_YELLOW_TERRACOTTA: return "Yellow Terracotta";
+        case BLOCK_LIME_TERRACOTTA: return "Lime Terracotta";
+        case BLOCK_PINK_TERRACOTTA: return "Pink Terracotta";
+        case BLOCK_GRAY_TERRACOTTA: return "Gray Terracotta";
+        case BLOCK_LIGHT_GRAY_TERRACOTTA: return "Light Gray Terracotta";
+        case BLOCK_CYAN_TERRACOTTA: return "Cyan Terracotta";
+        case BLOCK_PURPLE_TERRACOTTA: return "Purple Terracotta";
+        case BLOCK_BLUE_TERRACOTTA: return "Blue Terracotta";
+        case BLOCK_BROWN_TERRACOTTA: return "Brown Terracotta";
+        case BLOCK_GREEN_TERRACOTTA: return "Green Terracotta";
+        case BLOCK_RED_TERRACOTTA: return "Red Terracotta";
+        case BLOCK_BLACK_TERRACOTTA: return "Black Terracotta";
         case BLOCK_GLASS: return "Glass";
         case BLOCK_WHITE_STAINED_GLASS: return "White Stained Glass";
         case BLOCK_ORANGE_STAINED_GLASS: return "Orange Stained Glass";
@@ -847,7 +777,7 @@ const char* GetBlockName(BlockType block) {
         case BLOCK_SEA_LANTERN: return "Sea Lantern";
         case BLOCK_MAGMA_BLOCK: return "Magma Block";
         case BLOCK_BONE_BLOCK: return "Bone Block";
-        case BLOCK_QUARTZ_BLOCK: return "Quartz Block";
+        case BLOCK_QUARTZ_BLOCK: return "Block of Quartz";
         case BLOCK_CHISELED_QUARTZ_BLOCK: return "Chiseled Quartz Block";
         case BLOCK_QUARTZ_PILLAR: return "Quartz Pillar";
         case BLOCK_PACKED_ICE: return "Packed Ice";
@@ -856,7 +786,7 @@ const char* GetBlockName(BlockType block) {
         case BLOCK_SNOW_BLOCK: return "Snow Block";
         case BLOCK_CLAY: return "Clay";
         case BLOCK_HONEYCOMB_BLOCK: return "Honeycomb Block";
-        case BLOCK_HAY_BLOCK: return "Hay Block";
+        case BLOCK_HAY_BLOCK: return "Hay Bale";
         case BLOCK_MELON: return "Melon";
         case BLOCK_PUMPKIN: return "Pumpkin";
         case BLOCK_JACK_O_LANTERN: return "Jack o'Lantern";
@@ -865,4 +795,48 @@ const char* GetBlockName(BlockType block) {
         case BLOCK_WET_SPONGE: return "Wet Sponge";
         default: return "Unknown Block";
     }
-} 
+}
+
+static const char* BlockIdOverride(BlockType block) {
+    switch (block) {
+        case BLOCK_IRON_BLOCK: return "iron_block";
+        case BLOCK_GOLD_BLOCK: return "gold_block";
+        case BLOCK_DIAMOND_BLOCK: return "diamond_block";
+        case BLOCK_EMERALD_BLOCK: return "emerald_block";
+        case BLOCK_REDSTONE_BLOCK: return "redstone_block";
+        case BLOCK_LAPIS_BLOCK: return "lapis_block";
+        case BLOCK_COAL_BLOCK: return "coal_block";
+        case BLOCK_LAPIS_ORE: return "lapis_ore";
+        case BLOCK_QUARTZ_BLOCK: return "quartz_block";
+        case BLOCK_HAY_BLOCK: return "hay_block";
+        case BLOCK_JACK_O_LANTERN: return "jack_o_lantern";
+        default: return NULL;
+    }
+}
+
+// Most ids are the English name in lower case with underscores.
+const char* GetBlockId(BlockType block) {
+    static char ids[BLOCK_COUNT][40] = { { 0 } };
+    static bool ready = false;
+
+    if (!ready) {
+        for (int i = 0; i < BLOCK_COUNT; i++) {
+            const char *name = BlockIdOverride((BlockType)i);
+            int length = 0;
+            bool literal = (name != NULL);
+
+            if (!literal) name = GetBlockName((BlockType)i);
+            for (int k = 0; (name[k] != '\0') && (length < (int)sizeof(ids[i]) - 1); k++) {
+                char c = name[k];
+
+                if (literal) ids[i][length++] = c;
+                else if (c == ' ') ids[i][length++] = '_';
+                else if (c != '\'') ids[i][length++] = (char)(((c >= 'A') && (c <= 'Z'))? c - 'A' + 'a' : c);
+            }
+            ids[i][length] = '\0';
+        }
+        ready = true;
+    }
+    if ((block < 0) || (block >= BLOCK_COUNT)) return "air";
+    return ids[block];
+}

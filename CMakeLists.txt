@@ -64,10 +64,20 @@ add_executable(save_format_test
 target_include_directories(save_format_test PRIVATE client)
 target_link_libraries(save_format_test opencraft_common)
 
-add_executable(opencraft-server server/main.c)
-target_link_libraries(opencraft-server PRIVATE opencraft_common)
+find_package(Threads REQUIRED)
+
+add_executable(opencraft-server server/main.c server/game_server.c)
+target_include_directories(opencraft-server PRIVATE server)
+target_link_libraries(opencraft-server PRIVATE opencraft_common Threads::Threads)
 set_target_properties(opencraft-server PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/server)
+
+add_executable(session_test
+    tests/session_test.c
+    server/game_server.c
+)
+target_include_directories(session_test PRIVATE server)
+target_link_libraries(session_test PRIVATE opencraft_common Threads::Threads)
 
 # Web Configurations
 if ("${PLATFORM}" STREQUAL "Web")

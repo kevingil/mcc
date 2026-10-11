@@ -422,7 +422,7 @@ bool IsChunkInFrustum(Chunk* chunk, Camera3D camera) {
     Vector3 chunkCenter = Vector3Add(chunkWorldPos, (Vector3){CHUNK_SIZE/2, WORLD_HEIGHT/2, CHUNK_SIZE/2});
     
     float distance = Vector3Distance(camera.position, chunkCenter);
-    float maxDistance = RENDER_DISTANCE * CHUNK_SIZE;
+    float maxDistance = GameRenderDistance() * CHUNK_SIZE;
     
     return distance <= maxDistance;
 }
@@ -468,131 +468,528 @@ void InitTextureManager(void) {
     memset(textureManager.textureNames, 0, sizeof(textureManager.textureNames));
 }
 
-void LoadBlockTextures(void) {
-    // Load actual texture files from resources directory
-    const char* textureNames[] = {
-        "grass_block_top", "grass_block_side", "dirt",
-        "stone", "cobblestone", "bedrock", "sand", "gravel",
-        "oak_log", "oak_log_top", "oak_planks", "oak_leaves",
-        "birch_log", "birch_log_top", "birch_planks", "birch_leaves",
-        "acacia_log", "acacia_log_top", "acacia_planks", "acacia_leaves",
-        "dark_oak_log", "dark_oak_log_top", "dark_oak_planks", "dark_oak_leaves",
-        "stone_bricks", "mossy_stone_bricks", "andesite", "granite", "diorite",
-        "sandstone", "sandstone_top", "sandstone_bottom",
-        "coal_ore", "iron_ore", "gold_ore", "diamond_ore",
-        "iron_block", "gold_block", "diamond_block",
-        "white_wool", "orange_wool", "blue_wool", "red_wool",
-        "glass", "bricks", "bookshelf", "glowstone", "obsidian",
-        "netherrack", "end_stone", "quartz_block", "packed_ice",
-        "water_still", "water_flow", "bucket", "water_bucket"
+// Every block face resolves to one texture name. Meshing, item icons, and the
+// debug readout all read this table, so a block looks the same everywhere.
+// Directional blocks have no facing yet; their front is the north (-Z) face.
+static const char *const dyeNames[16] = {
+    "white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray",
+    "light_gray", "cyan", "purple", "blue", "brown", "green", "red", "black"
+};
+
+// Flat item sprites the inventory draws. They share the block atlas.
+static const char *const itemTextureNames[] = {
+    "bucket", "water_bucket", "sign", "redstone", "compass_00", "diamond_pickaxe", "paper", "lava_bucket", "apple"
+};
+
+static int faceTextures[BLOCK_COUNT][6] = { 0 };
+
+static const char *DyedTexture(int family, int color)
+{
+    static const char *const suffixes[4] = { "wool", "concrete", "terracotta", "stained_glass" };
+    static char names[4][16][40] = { 0 };
+
+    if (names[family][color][0] == '\0') snprintf(names[family][color], sizeof(names[family][color]), "%s_%s", dyeNames[color], suffixes[family]);
+    return names[family][color];
+}
+
+static const char *BlockFaceTexture(BlockType block, int faceIndex)
+{
+    bool vertical = (faceIndex == FACE_TOP) || (faceIndex == FACE_BOTTOM);
+
+    if ((block >= BLOCK_WHITE_WOOL) && (block <= BLOCK_BLACK_WOOL)) return DyedTexture(0, block - BLOCK_WHITE_WOOL);
+    if ((block >= BLOCK_WHITE_CONCRETE) && (block <= BLOCK_BLACK_CONCRETE)) return DyedTexture(1, block - BLOCK_WHITE_CONCRETE);
+    if ((block >= BLOCK_WHITE_TERRACOTTA) && (block <= BLOCK_BLACK_TERRACOTTA)) return DyedTexture(2, block - BLOCK_WHITE_TERRACOTTA);
+    if ((block >= BLOCK_WHITE_STAINED_GLASS) && (block <= BLOCK_BLACK_STAINED_GLASS)) return DyedTexture(3, block - BLOCK_WHITE_STAINED_GLASS);
+    if (IsWaterBlock(block)) return (block == BLOCK_WATER)? "water_still" : "water_flow";
+
+    switch (block)
+    {
+        case BLOCK_GRASS: return (faceIndex == FACE_TOP)? "grass_block_top" : ((faceIndex == FACE_BOTTOM)? "dirt" : "grass_block_side");
+        case BLOCK_DIRT: return "dirt";
+        case BLOCK_STONE: return "stone";
+        case BLOCK_COBBLESTONE: return "cobblestone";
+        case BLOCK_BEDROCK: return "bedrock";
+        case BLOCK_SAND: return "sand";
+        case BLOCK_GRAVEL: return "gravel";
+        case BLOCK_BUCKET: return "bucket";
+        case BLOCK_WATER_BUCKET: return "water_bucket";
+        case BLOCK_OAK_LOG: return vertical? "oak_log_top" : "oak_log";
+        case BLOCK_OAK_PLANKS: return "oak_planks";
+        case BLOCK_OAK_LEAVES: return "oak_leaves";
+        case BLOCK_BIRCH_LOG: return vertical? "birch_log_top" : "birch_log";
+        case BLOCK_BIRCH_PLANKS: return "birch_planks";
+        case BLOCK_BIRCH_LEAVES: return "birch_leaves";
+        case BLOCK_ACACIA_LOG: return vertical? "acacia_log_top" : "acacia_log";
+        case BLOCK_ACACIA_PLANKS: return "acacia_planks";
+        case BLOCK_ACACIA_LEAVES: return "acacia_leaves";
+        case BLOCK_DARK_OAK_LOG: return vertical? "dark_oak_log_top" : "dark_oak_log";
+        case BLOCK_DARK_OAK_PLANKS: return "dark_oak_planks";
+        case BLOCK_DARK_OAK_LEAVES: return "dark_oak_leaves";
+        case BLOCK_STONE_BRICKS: return "stone_bricks";
+        case BLOCK_MOSSY_STONE_BRICKS: return "mossy_stone_bricks";
+        case BLOCK_CRACKED_STONE_BRICKS: return "cracked_stone_bricks";
+        case BLOCK_MOSSY_COBBLESTONE: return "mossy_cobblestone";
+        case BLOCK_SMOOTH_STONE: return "stone_slab_top";
+        case BLOCK_ANDESITE: return "andesite";
+        case BLOCK_GRANITE: return "granite";
+        case BLOCK_DIORITE: return "diorite";
+        case BLOCK_SANDSTONE: return (faceIndex == FACE_TOP)? "sandstone_top" : ((faceIndex == FACE_BOTTOM)? "sandstone_bottom" : "sandstone");
+        case BLOCK_CHISELED_SANDSTONE: return vertical? "sandstone_top" : "chiseled_sandstone";
+        case BLOCK_CUT_SANDSTONE: return vertical? "sandstone_top" : "cut_sandstone";
+        case BLOCK_RED_SAND: return "red_sand";
+        case BLOCK_RED_SANDSTONE: return (faceIndex == FACE_TOP)? "red_sandstone_top" : ((faceIndex == FACE_BOTTOM)? "red_sandstone_bottom" : "red_sandstone");
+        case BLOCK_COAL_ORE: return "coal_ore";
+        case BLOCK_IRON_ORE: return "iron_ore";
+        case BLOCK_GOLD_ORE: return "gold_ore";
+        case BLOCK_DIAMOND_ORE: return "diamond_ore";
+        case BLOCK_REDSTONE_ORE: return "redstone_ore";
+        case BLOCK_EMERALD_ORE: return "emerald_ore";
+        case BLOCK_LAPIS_ORE: return "lapis_ore";
+        case BLOCK_IRON_BLOCK: return "iron_block";
+        case BLOCK_GOLD_BLOCK: return "gold_block";
+        case BLOCK_DIAMOND_BLOCK: return "diamond_block";
+        case BLOCK_EMERALD_BLOCK: return "emerald_block";
+        case BLOCK_REDSTONE_BLOCK: return "redstone_block";
+        case BLOCK_LAPIS_BLOCK: return "lapis_block";
+        case BLOCK_COAL_BLOCK: return "coal_block";
+        case BLOCK_TERRACOTTA: return "terracotta";
+        case BLOCK_GLASS: return "glass";
+        case BLOCK_BRICKS: return "bricks";
+        case BLOCK_BOOKSHELF: return vertical? "oak_planks" : "bookshelf";
+        case BLOCK_CRAFTING_TABLE:
+        {
+            if (faceIndex == FACE_TOP) return "crafting_table_top";
+            if (faceIndex == FACE_BOTTOM) return "oak_planks";
+            return ((faceIndex == FACE_BACK) || (faceIndex == FACE_LEFT))? "crafting_table_front" : "crafting_table_side";
+        }
+        case BLOCK_FURNACE: return vertical? "furnace_top" : ((faceIndex == FACE_BACK)? "furnace_front" : "furnace_side");
+        case BLOCK_CHEST: return vertical? "chest_top" : ((faceIndex == FACE_BACK)? "chest_front" : "chest_side");
+        case BLOCK_GLOWSTONE: return "glowstone";
+        case BLOCK_OBSIDIAN: return "obsidian";
+        case BLOCK_NETHERRACK: return "netherrack";
+        case BLOCK_SOUL_SAND: return "soul_sand";
+        case BLOCK_END_STONE: return "end_stone";
+        case BLOCK_PURPUR_BLOCK: return "purpur_block";
+        case BLOCK_PRISMARINE: return "prismarine";
+        case BLOCK_SEA_LANTERN: return "sea_lantern";
+        case BLOCK_MAGMA_BLOCK: return "magma";
+        case BLOCK_BONE_BLOCK: return vertical? "bone_block_top" : "bone_block_side";
+        case BLOCK_QUARTZ_BLOCK: return (faceIndex == FACE_TOP)? "quartz_block_top" : ((faceIndex == FACE_BOTTOM)? "quartz_block_bottom" : "quartz_block_side");
+        case BLOCK_CHISELED_QUARTZ_BLOCK: return vertical? "chiseled_quartz_block_top" : "chiseled_quartz_block";
+        case BLOCK_QUARTZ_PILLAR: return vertical? "quartz_pillar_top" : "quartz_pillar";
+        case BLOCK_PACKED_ICE: return "packed_ice";
+        case BLOCK_BLUE_ICE: return "blue_ice";
+        case BLOCK_ICE: return "ice";
+        case BLOCK_SNOW_BLOCK: return "snow";
+        case BLOCK_CLAY: return "clay";
+        case BLOCK_HONEYCOMB_BLOCK: return "honeycomb_block";
+        case BLOCK_HAY_BLOCK: return vertical? "hay_block_top" : "hay_block_side";
+        case BLOCK_MELON: return vertical? "melon_top" : "melon_side";
+        case BLOCK_PUMPKIN: return vertical? "pumpkin_top" : "pumpkin_side";
+        case BLOCK_JACK_O_LANTERN: return vertical? "pumpkin_top" : ((faceIndex == FACE_BACK)? "jack_o_lantern" : "pumpkin_side");
+        case BLOCK_CACTUS: return (faceIndex == FACE_TOP)? "cactus_top" : ((faceIndex == FACE_BOTTOM)? "cactus_bottom" : "cactus_side");
+        case BLOCK_SPONGE: return "sponge";
+        case BLOCK_WET_SPONGE: return "wet_sponge";
+        default: return "stone";
+    }
+}
+
+static void AddTextureName(const char **names, int *count, const char *name)
+{
+    for (int i = 0; i < *count; i++)
+    {
+        if (strcmp(names[i], name) == 0) return;
+    }
+    if (*count < MAX_BLOCK_TEXTURES) names[(*count)++] = name;
+}
+
+static Image LoadTextureFile(const char *pattern, const char *name)
+{
+    static const char *const roots[] = { "resources/textures", "client/resources/textures" };
+    char path[256] = { 0 };
+    Image image = { 0 };
+
+    for (int i = 0; i < 2; i++)
+    {
+        snprintf(path, sizeof(path), pattern, roots[i], name);
+        if (!FileExists(path)) continue;
+        image = LoadImage(path);
+        if (image.data != NULL) break;
+    }
+    if (image.data == NULL) return image;
+    ImageFormat(&image, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+    // Animated strips keep the first frame.
+    if ((image.width > 0) && (image.height > image.width*2)) ImageCrop(&image, (Rectangle){ 0, 0, (float)image.width, (float)image.width });
+    return image;
+}
+
+// Magenta and black quarters, so a missing file stands out instead of
+// silently borrowing another block's texture.
+static Image MissingTile(void)
+{
+    Image image = GenImageColor(TEXTURE_SIZE, TEXTURE_SIZE, BLACK);
+    Color magenta = { 248, 0, 248, 255 };
+
+    ImageDrawRectangle(&image, 0, 0, TEXTURE_SIZE/2, TEXTURE_SIZE/2, magenta);
+    ImageDrawRectangle(&image, TEXTURE_SIZE/2, TEXTURE_SIZE/2, TEXTURE_SIZE/2, TEXTURE_SIZE/2, magenta);
+    return image;
+}
+
+// The chest is a 14-pixel box with a lid and a latch. As a full cube it uses
+// the lid top, and lid-over-base strips for the sides; the front gets the latch.
+static Image ChestTile(Image chest, const char *name)
+{
+    Image tile = { 0 };
+
+    if (strcmp(name, "chest_top") == 0) tile = ImageFromImage(chest, (Rectangle){ 14, 0, 14, 14 });
+    else
+    {
+        bool front = (strcmp(name, "chest_front") == 0);
+        float u = front? 14.0f : 0.0f;
+
+        tile = GenImageColor(14, 15, BLANK);
+        ImageDraw(&tile, chest, (Rectangle){ u, 14, 14, 5 }, (Rectangle){ 0, 0, 14, 5 }, WHITE);
+        ImageDraw(&tile, chest, (Rectangle){ u, 33, 14, 10 }, (Rectangle){ 0, 5, 14, 10 }, WHITE);
+        if (front) ImageDraw(&tile, chest, (Rectangle){ 1, 1, 2, 4 }, (Rectangle){ 6, 3, 2, 4 }, WHITE);
+    }
+    ImageResizeNN(&tile, TEXTURE_SIZE, TEXTURE_SIZE);
+    return tile;
+}
+
+// Rows of offset wax cells with clipped corners, lit from the top left.
+static Image HoneycombTile(void)
+{
+    Image image = GenImageColor(TEXTURE_SIZE, TEXTURE_SIZE, BLANK);
+    Color *pixels = (Color *)image.data;
+
+    for (int y = 0; y < TEXTURE_SIZE; y++)
+    {
+        for (int x = 0; x < TEXTURE_SIZE; x++)
+        {
+            int band = y/4;
+            int cellY = y%4;
+            int cellX = (x + ((band%2 == 1)? 4 : 0))%8;
+            bool wall = (cellY == 0) || (cellX == 0) || ((cellY == 1) && ((cellX == 1) || (cellX == 7)));
+            Color color = { 229, 148, 29, 255 };
+
+            if (wall) color = (Color){ 168, 96, 18, 255 };
+            else if ((cellY == 1) || (cellX == 1)) color = (Color){ 248, 190, 66, 255 };
+            else if ((cellY == 3) || (cellX == 7)) color = (Color){ 206, 124, 22, 255 };
+            pixels[y*TEXTURE_SIZE + x] = color;
+        }
+    }
+    return image;
+}
+
+// Good Vibes bakes its own hues. At atlas load, move a tile's mean onto a
+// vanilla color and scale each pixel's offset from that mean so the detail
+// stays. new = target + (pixel - average)*saturation, clamped to 0..255.
+// World, hotbar, and inventory share this atlas, so this is the only tint.
+typedef enum TileRecolorKind
+{
+    RECOLOR_VISIBLE = 0,
+    RECOLOR_GRASS_SIDE,
+    RECOLOR_BUCKET_WATER
+} TileRecolorKind;
+
+typedef struct TileColorTarget
+{
+    const char *name;
+    unsigned char r;
+    unsigned char g;
+    unsigned char b;
+    int alpha;
+    bool alphaIfOpaque;
+    float saturation;
+    TileRecolorKind kind;
+} TileColorTarget;
+
+static int ClampChannel(int value)
+{
+    if (value < 0) return 0;
+    if (value > 255) return 255;
+    return value;
+}
+
+static void WriteShiftedPixel(Color *pixel, Color source, float averageR, float averageG, float averageB, Color target, float saturation, int alpha)
+{
+    float nextR = target.r + (source.r - averageR)*saturation;
+    float nextG = target.g + (source.g - averageG)*saturation;
+    float nextB = target.b + (source.b - averageB)*saturation;
+
+    pixel->r = (unsigned char)ClampChannel((int)(nextR + 0.5f));
+    pixel->g = (unsigned char)ClampChannel((int)(nextG + 0.5f));
+    pixel->b = (unsigned char)ClampChannel((int)(nextB + 0.5f));
+    if (alpha >= 0) pixel->a = (unsigned char)alpha;
+}
+
+static bool ImageIsFullyOpaque(const Color *pixels, int count)
+{
+    if ((pixels == NULL) || (count <= 0)) return false;
+    for (int i = 0; i < count; i++)
+    {
+        if (pixels[i].a != 255) return false;
+    }
+    return true;
+}
+
+static bool PixelMatches(Color color, TileRecolorKind kind)
+{
+    if (color.a == 0) return false;
+    if (kind == RECOLOR_GRASS_SIDE) return false;
+    if (kind == RECOLOR_BUCKET_WATER) return (color.b > color.r) && (color.b > 160);
+    return true;
+}
+
+static void ShiftMatchingPixels(Color *pixels, int count, TileRecolorKind kind, Color target, float saturation, int alpha)
+{
+    bool selected[TEXTURE_SIZE*TEXTURE_SIZE] = { 0 };
+    double sumR = 0.0;
+    double sumG = 0.0;
+    double sumB = 0.0;
+    int selectedCount = 0;
+    float averageR = 0.0f;
+    float averageG = 0.0f;
+    float averageB = 0.0f;
+
+    if ((pixels == NULL) || (count <= 0) || (count > TEXTURE_SIZE*TEXTURE_SIZE)) return;
+
+    for (int i = 0; i < count; i++)
+    {
+        selected[i] = PixelMatches(pixels[i], kind);
+        if (!selected[i]) continue;
+        sumR += pixels[i].r;
+        sumG += pixels[i].g;
+        sumB += pixels[i].b;
+        selectedCount++;
+    }
+    if (selectedCount == 0) return;
+
+    averageR = (float)(sumR/selectedCount);
+    averageG = (float)(sumG/selectedCount);
+    averageB = (float)(sumB/selectedCount);
+
+    for (int i = 0; i < count; i++)
+    {
+        Color source = pixels[i];
+
+        if (!selected[i]) continue;
+        WriteShiftedPixel(&pixels[i], source, averageR, averageG, averageB, target, saturation, alpha);
+    }
+}
+
+// Grass fringe (G > R and G > B) moves toward foliage green. The baked dirt
+// underneath uses the same mean as the dirt tile. Classify first so the two
+// shifts do not restamp each other.
+static void RecolorGrassSideTile(Color *pixels, int count, Color grassTarget, Color dirtTarget, float saturation)
+{
+    unsigned char region[TEXTURE_SIZE*TEXTURE_SIZE] = { 0 };
+    double grassSumR = 0.0;
+    double grassSumG = 0.0;
+    double grassSumB = 0.0;
+    double dirtSumR = 0.0;
+    double dirtSumG = 0.0;
+    double dirtSumB = 0.0;
+    int grassCount = 0;
+    int dirtCount = 0;
+    float grassAverageR = 0.0f;
+    float grassAverageG = 0.0f;
+    float grassAverageB = 0.0f;
+    float dirtAverageR = 0.0f;
+    float dirtAverageG = 0.0f;
+    float dirtAverageB = 0.0f;
+
+    if ((pixels == NULL) || (count <= 0) || (count > TEXTURE_SIZE*TEXTURE_SIZE)) return;
+
+    for (int i = 0; i < count; i++)
+    {
+        Color color = pixels[i];
+
+        if (color.a == 0) continue;
+        if ((color.g > color.r) && (color.g > color.b))
+        {
+            region[i] = 1;
+            grassSumR += color.r;
+            grassSumG += color.g;
+            grassSumB += color.b;
+            grassCount++;
+        }
+        else
+        {
+            region[i] = 2;
+            dirtSumR += color.r;
+            dirtSumG += color.g;
+            dirtSumB += color.b;
+            dirtCount++;
+        }
+    }
+
+    if (grassCount > 0)
+    {
+        grassAverageR = (float)(grassSumR/grassCount);
+        grassAverageG = (float)(grassSumG/grassCount);
+        grassAverageB = (float)(grassSumB/grassCount);
+    }
+    if (dirtCount > 0)
+    {
+        dirtAverageR = (float)(dirtSumR/dirtCount);
+        dirtAverageG = (float)(dirtSumG/dirtCount);
+        dirtAverageB = (float)(dirtSumB/dirtCount);
+    }
+
+    for (int i = 0; i < count; i++)
+    {
+        Color source = pixels[i];
+
+        if ((region[i] == 1) && (grassCount > 0))
+        {
+            WriteShiftedPixel(&pixels[i], source, grassAverageR, grassAverageG, grassAverageB, grassTarget, saturation, -1);
+        }
+        else if ((region[i] == 2) && (dirtCount > 0))
+        {
+            WriteShiftedPixel(&pixels[i], source, dirtAverageR, dirtAverageG, dirtAverageB, dirtTarget, saturation, -1);
+        }
+    }
+}
+
+static void RecolorBlockTile(Image *image, const char *name)
+{
+    // spruce_leaves and jungle_leaves are not names BlockFaceTexture returns.
+    // dark_oak_leaves uses the oak foliage green. water_bucket is an item
+    // icon: only its blue pixels move, and they move to a lighter blue.
+    static const TileColorTarget targets[] =
+    {
+        { "grass_block_top", 0x7C, 0xB3, 0x42, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "grass_block_side", 0x7C, 0xB3, 0x42, -1, false, 0.70f, RECOLOR_GRASS_SIDE },
+        { "dirt", 0x86, 0x60, 0x43, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "sand", 0xDB, 0xD3, 0xA0, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "red_sand", 0xBE, 0x66, 0x21, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "stone", 0x7E, 0x7E, 0x7E, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "cobblestone", 0x7A, 0x7A, 0x7A, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "gravel", 0x83, 0x7F, 0x7C, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "oak_leaves", 0x5B, 0x9A, 0x32, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "birch_leaves", 0x6B, 0x8F, 0x4E, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "acacia_leaves", 0x8F, 0x9A, 0x32, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "dark_oak_leaves", 0x5B, 0x9A, 0x32, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "oak_log", 0x6D, 0x54, 0x34, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "oak_log_top", 0x9A, 0x7B, 0x4F, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "oak_planks", 0xB8, 0x94, 0x5F, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "snow", 0xF4, 0xF7, 0xF7, -1, false, 0.70f, RECOLOR_VISIBLE },
+        { "ice", 0xA0, 0xD0, 0xDC, 200, true, 0.70f, RECOLOR_VISIBLE },
+        { "packed_ice", 0x8B, 0xBC, 0xD8, 200, true, 0.70f, RECOLOR_VISIBLE },
+        { "blue_ice", 0x74, 0xA6, 0xD4, 200, true, 0.70f, RECOLOR_VISIBLE },
+        { "water_still", 0x3F, 0x76, 0xE4, 170, false, 0.70f, RECOLOR_VISIBLE },
+        { "water_flow", 0x3F, 0x76, 0xE4, 170, false, 0.70f, RECOLOR_VISIBLE },
+        { "water_bucket", 0x5B, 0x96, 0xD6, -1, false, 0.70f, RECOLOR_BUCKET_WATER }
     };
-    
-    int textureCount = sizeof(textureNames) / sizeof(textureNames[0]);
-    int texturesPerRow = TEXTURE_ATLAS_SIZE / TEXTURE_SIZE;
-    
-    // Create atlas image with transparent background (RGBA with alpha = 0)
-    Image atlasImage = GenImageColor(TEXTURE_ATLAS_SIZE, TEXTURE_ATLAS_SIZE, (Color){0, 0, 0, 0});
-    
+    Color *pixels = NULL;
+    int count = 0;
+    int writeAlpha = -1;
+    const TileColorTarget *target = NULL;
+
+    if ((image == NULL) || (image->data == NULL) || (name == NULL)) return;
+    if (image->format != PIXELFORMAT_UNCOMPRESSED_R8G8B8A8) return;
+
+    pixels = (Color *)image->data;
+    count = image->width*image->height;
+    if ((count <= 0) || (count > TEXTURE_SIZE*TEXTURE_SIZE)) return;
+
+    for (int i = 0; i < (int)(sizeof(targets)/sizeof(targets[0])); i++)
+    {
+        if (strcmp(targets[i].name, name) == 0)
+        {
+            target = &targets[i];
+            break;
+        }
+    }
+    if (target == NULL) return;
+
+    writeAlpha = target->alpha;
+    if ((target->alphaIfOpaque) && !ImageIsFullyOpaque(pixels, count)) writeAlpha = -1;
+
+    if (target->kind == RECOLOR_GRASS_SIDE)
+    {
+        Color grassTarget = { target->r, target->g, target->b, 255 };
+        Color dirtTarget = { 0x86, 0x60, 0x43, 255 };
+
+        RecolorGrassSideTile(pixels, count, grassTarget, dirtTarget, target->saturation);
+        return;
+    }
+
+    ShiftMatchingPixels(pixels, count, target->kind, (Color){ target->r, target->g, target->b, 255 }, target->saturation, writeAlpha);
+}
+
+void LoadBlockTextures(void) {
+    const char *names[MAX_BLOCK_TEXTURES] = { 0 };
+    int nameCount = 0;
+    int texturesPerRow = TEXTURE_ATLAS_SIZE/TEXTURE_SIZE;
+    Image atlasImage = GenImageColor(TEXTURE_ATLAS_SIZE, TEXTURE_ATLAS_SIZE, BLANK);
+    Image chest = LoadTextureFile("%s/entity/chest/%s.png", "normal");
     int successfulLoads = 0;
     int placeholderCount = 0;
-    
-    for (int i = 0; i < textureCount && i < MAX_BLOCK_TEXTURES; i++) {
-        // Try multiple potential file paths
-        char filePath[256];
-        Image blockTexture = {0};
+
+    AddTextureName(names, &nameCount, "missing");
+    for (int block = 1; block < BLOCK_COUNT; block++)
+    {
+        for (int face = 0; face < 6; face++) AddTextureName(names, &nameCount, BlockFaceTexture((BlockType)block, face));
+    }
+    for (int i = 0; i < (int)(sizeof(itemTextureNames)/sizeof(itemTextureNames[0])); i++) AddTextureName(names, &nameCount, itemTextureNames[i]);
+
+    for (int i = 0; i < nameCount; i++)
+    {
+        Image tile = { 0 };
+        int x = (i%texturesPerRow)*TEXTURE_SIZE;
+        int y = (i/texturesPerRow)*TEXTURE_SIZE;
         bool loaded = false;
-        
-        // Try different possible paths
-        const char* possiblePaths[] = {
-            "client/resources/textures/block/%s.png",
-            "resources/textures/block/%s.png",
-            "./client/resources/textures/block/%s.png",
-            "./resources/textures/block/%s.png",
-            "resources/textures/item/%s.png",
-            "./resources/textures/item/%s.png"
-        };
-        
-        for (int pathIdx = 0; pathIdx < 6; pathIdx++) {
-            snprintf(filePath, sizeof(filePath), possiblePaths[pathIdx], textureNames[i]);
-            
-            if (FileExists(filePath)) {
-                blockTexture = LoadImage(filePath);
-                if (blockTexture.data != NULL) {
-                    loaded = true;
-                    successfulLoads++;
-                    
-                    // Ensure image format supports alpha channel
-                    if (blockTexture.format != PIXELFORMAT_UNCOMPRESSED_R8G8B8A8) {
-                        ImageFormat(&blockTexture, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
-                    }
-                    // Animated strips keep the first frame.
-                    if ((blockTexture.width > 0) && (blockTexture.height > blockTexture.width*2)) {
-                        ImageCrop(&blockTexture, (Rectangle){ 0, 0, (float)blockTexture.width, (float)blockTexture.width });
-                    }
-                    break;
-                }
-            }
+
+        if (strcmp(names[i], "missing") == 0) tile = MissingTile();
+        else if (strncmp(names[i], "chest_", 6) == 0)
+        {
+            if (chest.data != NULL) tile = ChestTile(chest, names[i]);
         }
-        
-        if (!loaded) {
-            // Create a placeholder colored texture with full alpha
-            Color placeholderColors[] = {
-                GREEN, DARKGREEN, BROWN, GRAY, DARKGRAY, (Color){64,64,64,255}, 
-                BEIGE, (Color){136,136,136,255}, (Color){139,69,19,255}, (Color){162,130,78,255},
-                DARKGREEN, (Color){220,220,220,255}, (Color){192,175,121,255}, (Color){128,167,85,255},
-                (Color){186,99,64,255}, (Color){168,90,50,255}, (Color){99,128,15,255}, (Color){66,43,20,255},
-                (Color){123,123,123,255}, (Color){115,121,105,255}, (Color){132,134,132,255}, (Color){149,103,85,255},
-                (Color){188,188,188,255}, (Color){245,238,173,255}, (Color){84,84,84,255}, (Color){135,106,97,255},
-                (Color){143,140,125,255}, (Color){92,219,213,255}, (Color){220,220,220,255}, GOLD,
-                (Color){93,219,213,255}, WHITE, ORANGE, BLUE, RED, (Color){255,255,255,128},
-                (Color){150,97,83,255}, (Color){139,69,19,255}, (Color){255,207,139,255}, (Color){20,18,30,255},
-                (Color){97,38,38,255}, (Color){221,223,165,255}, (Color){235,229,222,255}, (Color){160,160,255,255}
-            };
-            
-            Color color = (i < sizeof(placeholderColors) / sizeof(placeholderColors[0])) ? 
-                          placeholderColors[i] : WHITE;
-            blockTexture = GenImageColor(TEXTURE_SIZE, TEXTURE_SIZE, color);
-            
-            // Ensure placeholder also has alpha channel
-            ImageFormat(&blockTexture, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+        else if (strcmp(names[i], "honeycomb_block") == 0) tile = HoneycombTile();
+        else
+        {
+            tile = LoadTextureFile("%s/block/%s.png", names[i]);
+            if (tile.data == NULL) tile = LoadTextureFile("%s/item/%s.png", names[i]);
+        }
+
+        loaded = (tile.data != NULL);
+        if (tile.data == NULL)
+        {
+            tile = MissingTile();
             placeholderCount++;
         }
-        
-        // Ensure texture is the correct size
-        if (blockTexture.width != TEXTURE_SIZE || blockTexture.height != TEXTURE_SIZE) {
-            ImageResize(&blockTexture, TEXTURE_SIZE, TEXTURE_SIZE);
-        }
-        
-        // Calculate position in atlas
-        int x = (i % texturesPerRow) * TEXTURE_SIZE;
-        int y = (i / texturesPerRow) * TEXTURE_SIZE;
-        
-        // Copy texture to atlas preserving alpha channel (use BLANK instead of WHITE)
-        ImageDraw(&atlasImage, blockTexture, 
-                  (Rectangle){0, 0, TEXTURE_SIZE, TEXTURE_SIZE}, 
-                  (Rectangle){x, y, TEXTURE_SIZE, TEXTURE_SIZE}, 
-                  (Color){255, 255, 255, 255}); // Use full white with full alpha
-        
-        // Store texture info
-        strcpy(textureManager.textureNames[i], textureNames[i]);
-        textureManager.texCoords[i][0] = (float)x / TEXTURE_ATLAS_SIZE;  // u
-        textureManager.texCoords[i][1] = (float)y / TEXTURE_ATLAS_SIZE;  // v
-        textureManager.texCoords[i][2] = (float)TEXTURE_SIZE / TEXTURE_ATLAS_SIZE;  // width
-        textureManager.texCoords[i][3] = (float)TEXTURE_SIZE / TEXTURE_ATLAS_SIZE;  // height
-        
+        else if (i > 0) successfulLoads++;
+        if ((tile.width != TEXTURE_SIZE) || (tile.height != TEXTURE_SIZE)) ImageResize(&tile, TEXTURE_SIZE, TEXTURE_SIZE);
+        if (loaded && (strcmp(names[i], "missing") != 0) && (strcmp(names[i], "honeycomb_block") != 0)) RecolorBlockTile(&tile, names[i]);
+
+        ImageDraw(&atlasImage, tile, (Rectangle){ 0, 0, TEXTURE_SIZE, TEXTURE_SIZE },
+            (Rectangle){ (float)x, (float)y, TEXTURE_SIZE, TEXTURE_SIZE }, WHITE);
+        snprintf(textureManager.textureNames[i], sizeof(textureManager.textureNames[i]), "%s", names[i]);
+        textureManager.texCoords[i][0] = (float)x/TEXTURE_ATLAS_SIZE;
+        textureManager.texCoords[i][1] = (float)y/TEXTURE_ATLAS_SIZE;
+        textureManager.texCoords[i][2] = (float)TEXTURE_SIZE/TEXTURE_ATLAS_SIZE;
+        textureManager.texCoords[i][3] = (float)TEXTURE_SIZE/TEXTURE_ATLAS_SIZE;
         textureManager.textureCount++;
-        
-        // Clean up individual texture
-        UnloadImage(blockTexture);
+        UnloadImage(tile);
     }
-    
-    // Create texture from atlas
+    if (chest.data != NULL) UnloadImage(chest);
+
+    for (int block = 0; block < BLOCK_COUNT; block++)
+    {
+        for (int face = 0; face < 6; face++)
+        {
+            int index = GetTextureIndex(BlockFaceTexture((BlockType)block, face));
+
+            faceTextures[block][face] = (index < 0)? 0 : index;
+        }
+    }
+
     textureManager.atlas = LoadTextureFromImage(atlasImage);
     UnloadImage(atlasImage);
-    
-    // Set texture filter to point (pixelated) for retro look
     SetTextureFilter(textureManager.atlas, TEXTURE_FILTER_POINT);
-    
+
     printf("Block textures loaded: %d successful, %d placeholders\n", successfulLoads, placeholderCount);
 }
 
@@ -609,7 +1006,19 @@ int GetTextureIndex(const char* textureName) {
             return i;
         }
     }
-    return 0; // Default to first texture if not found
+    return -1;
+}
+
+bool GetNamedTextureUV(const char *name, float *u, float *v, float *w, float *h)
+{
+    int index = ((name != NULL)? GetTextureIndex(name) : -1);
+
+    if (index < 0) return false;
+    *u = textureManager.texCoords[index][0];
+    *v = textureManager.texCoords[index][1];
+    *w = textureManager.texCoords[index][2];
+    *h = textureManager.texCoords[index][3];
+    return true;
 }
 
 Texture2D GetTextureAtlas(void) {
@@ -643,182 +1052,13 @@ bool ValidateTextureManager(void) {
 }
 
 void GetBlockTextureUV(BlockType block, int faceIndex, float* u, float* v, float* w, float* h) {
-    const char* textureName = "stone"; // Default
-    
-    // Map block types and faces to texture names
-    switch (block) {
-        case BLOCK_GRASS:
-            if (faceIndex == FACE_TOP) textureName = "grass_block_top";
-            else if (faceIndex == FACE_BOTTOM) textureName = "dirt";
-            else textureName = "grass_block_side";
-            break;
-        case BLOCK_DIRT: textureName = "dirt"; break;
-        case BLOCK_STONE: textureName = "stone"; break;
-        case BLOCK_COBBLESTONE: textureName = "cobblestone"; break;
-        case BLOCK_BEDROCK: textureName = "bedrock"; break;
-        case BLOCK_SAND: textureName = "sand"; break;
-        case BLOCK_GRAVEL: textureName = "gravel"; break;
-        case BLOCK_WATER: textureName = "water_still"; break;
-        case BLOCK_WATER_FALL:
-        case BLOCK_WATER_1:
-        case BLOCK_WATER_2:
-        case BLOCK_WATER_3:
-        case BLOCK_WATER_4:
-        case BLOCK_WATER_5:
-        case BLOCK_WATER_6:
-        case BLOCK_WATER_7: textureName = "water_flow"; break;
-        case BLOCK_BUCKET: textureName = "bucket"; break;
-        case BLOCK_WATER_BUCKET: textureName = "water_bucket"; break;
-        
-        // Wood blocks
-        case BLOCK_OAK_LOG:
-            if (faceIndex == FACE_TOP || faceIndex == FACE_BOTTOM) textureName = "oak_log_top";
-            else textureName = "oak_log";
-            break;
-        case BLOCK_OAK_PLANKS: textureName = "oak_planks"; break;
-        case BLOCK_OAK_LEAVES: textureName = "oak_leaves"; break;
-        case BLOCK_BIRCH_LOG:
-            if (faceIndex == FACE_TOP || faceIndex == FACE_BOTTOM) textureName = "birch_log_top";
-            else textureName = "birch_log";
-            break;
-        case BLOCK_BIRCH_PLANKS: textureName = "birch_planks"; break;
-        case BLOCK_BIRCH_LEAVES: textureName = "birch_leaves"; break;
-        case BLOCK_ACACIA_LOG:
-            if (faceIndex == FACE_TOP || faceIndex == FACE_BOTTOM) textureName = "acacia_log_top";
-            else textureName = "acacia_log";
-            break;
-        case BLOCK_ACACIA_PLANKS: textureName = "acacia_planks"; break;
-        case BLOCK_ACACIA_LEAVES: textureName = "acacia_leaves"; break;
-        case BLOCK_DARK_OAK_LOG:
-            if (faceIndex == FACE_TOP || faceIndex == FACE_BOTTOM) textureName = "dark_oak_log_top";
-            else textureName = "dark_oak_log";
-            break;
-        case BLOCK_DARK_OAK_PLANKS: textureName = "dark_oak_planks"; break;
-        case BLOCK_DARK_OAK_LEAVES: textureName = "dark_oak_leaves"; break;
-        
-        // Stone variants
-        case BLOCK_STONE_BRICKS: textureName = "stone_bricks"; break;
-        case BLOCK_MOSSY_STONE_BRICKS: textureName = "mossy_stone_bricks"; break;
-        case BLOCK_ANDESITE: textureName = "andesite"; break;
-        case BLOCK_GRANITE: textureName = "granite"; break;
-        case BLOCK_DIORITE: textureName = "diorite"; break;
-        case BLOCK_MOSSY_COBBLESTONE: textureName = "mossy_cobblestone"; break;
-        case BLOCK_SMOOTH_STONE: textureName = "smooth_stone"; break;
-        
-        // Sandstone
-        case BLOCK_SANDSTONE:
-            if (faceIndex == FACE_TOP) textureName = "sandstone_top";
-            else if (faceIndex == FACE_BOTTOM) textureName = "sandstone_bottom";
-            else textureName = "sandstone";
-            break;
-        case BLOCK_CHISELED_SANDSTONE: textureName = "chiseled_sandstone"; break;
-        case BLOCK_CUT_SANDSTONE: textureName = "cut_sandstone"; break;
-        case BLOCK_RED_SAND: textureName = "red_sand"; break;
-        case BLOCK_RED_SANDSTONE: textureName = "red_sandstone"; break;
-        
-        // Ores
-        case BLOCK_COAL_ORE: textureName = "coal_ore"; break;
-        case BLOCK_IRON_ORE: textureName = "iron_ore"; break;
-        case BLOCK_GOLD_ORE: textureName = "gold_ore"; break;
-        case BLOCK_DIAMOND_ORE: textureName = "diamond_ore"; break;
-        case BLOCK_REDSTONE_ORE: textureName = "redstone_ore"; break;
-        case BLOCK_EMERALD_ORE: textureName = "emerald_ore"; break;
-        case BLOCK_LAPIS_ORE: textureName = "lapis_ore"; break;
-        
-        // Metal blocks
-        case BLOCK_IRON_BLOCK: textureName = "iron_block"; break;
-        case BLOCK_GOLD_BLOCK: textureName = "gold_block"; break;
-        case BLOCK_DIAMOND_BLOCK: textureName = "diamond_block"; break;
-        case BLOCK_EMERALD_BLOCK: textureName = "emerald_block"; break;
-        case BLOCK_REDSTONE_BLOCK: textureName = "redstone_block"; break;
-        case BLOCK_LAPIS_BLOCK: textureName = "lapis_block"; break;
-        case BLOCK_COAL_BLOCK: textureName = "coal_block"; break;
-        
-        // Wool blocks
-        case BLOCK_WHITE_WOOL: textureName = "white_wool"; break;
-        case BLOCK_ORANGE_WOOL: textureName = "orange_wool"; break;
-        case BLOCK_MAGENTA_WOOL: textureName = "magenta_wool"; break;
-        case BLOCK_LIGHT_BLUE_WOOL: textureName = "light_blue_wool"; break;
-        case BLOCK_YELLOW_WOOL: textureName = "yellow_wool"; break;
-        case BLOCK_LIME_WOOL: textureName = "lime_wool"; break;
-        case BLOCK_PINK_WOOL: textureName = "pink_wool"; break;
-        case BLOCK_GRAY_WOOL: textureName = "gray_wool"; break;
-        case BLOCK_LIGHT_GRAY_WOOL: textureName = "light_gray_wool"; break;
-        case BLOCK_CYAN_WOOL: textureName = "cyan_wool"; break;
-        case BLOCK_PURPLE_WOOL: textureName = "purple_wool"; break;
-        case BLOCK_BLUE_WOOL: textureName = "blue_wool"; break;
-        case BLOCK_BROWN_WOOL: textureName = "brown_wool"; break;
-        case BLOCK_GREEN_WOOL: textureName = "green_wool"; break;
-        case BLOCK_RED_WOOL: textureName = "red_wool"; break;
-        case BLOCK_BLACK_WOOL: textureName = "black_wool"; break;
-        
-        // Glass
-        case BLOCK_GLASS: textureName = "glass"; break;
-        case BLOCK_WHITE_STAINED_GLASS: textureName = "white_stained_glass"; break;
-        case BLOCK_ORANGE_STAINED_GLASS: textureName = "orange_stained_glass"; break;
-        case BLOCK_MAGENTA_STAINED_GLASS: textureName = "magenta_stained_glass"; break;
-        case BLOCK_LIGHT_BLUE_STAINED_GLASS: textureName = "light_blue_stained_glass"; break;
-        case BLOCK_YELLOW_STAINED_GLASS: textureName = "yellow_stained_glass"; break;
-        case BLOCK_LIME_STAINED_GLASS: textureName = "lime_stained_glass"; break;
-        case BLOCK_PINK_STAINED_GLASS: textureName = "pink_stained_glass"; break;
-        case BLOCK_GRAY_STAINED_GLASS: textureName = "gray_stained_glass"; break;
-        case BLOCK_LIGHT_GRAY_STAINED_GLASS: textureName = "light_gray_stained_glass"; break;
-        case BLOCK_CYAN_STAINED_GLASS: textureName = "cyan_stained_glass"; break;
-        case BLOCK_PURPLE_STAINED_GLASS: textureName = "purple_stained_glass"; break;
-        case BLOCK_BLUE_STAINED_GLASS: textureName = "blue_stained_glass"; break;
-        case BLOCK_BROWN_STAINED_GLASS: textureName = "brown_stained_glass"; break;
-        case BLOCK_GREEN_STAINED_GLASS: textureName = "green_stained_glass"; break;
-        case BLOCK_RED_STAINED_GLASS: textureName = "red_stained_glass"; break;
-        case BLOCK_BLACK_STAINED_GLASS: textureName = "black_stained_glass"; break;
-        
-        // Special blocks
-        case BLOCK_BRICKS: textureName = "bricks"; break;
-        case BLOCK_BOOKSHELF: 
-            if (faceIndex == FACE_TOP || faceIndex == FACE_BOTTOM) textureName = "oak_planks";
-            else textureName = "bookshelf";
-            break;
-        case BLOCK_CRAFTING_TABLE:
-            if (faceIndex == FACE_TOP) textureName = "crafting_table_top";
-            else if (faceIndex == FACE_BOTTOM) textureName = "oak_planks";
-            else textureName = "crafting_table_side";
-            break;
-        case BLOCK_FURNACE: textureName = "furnace_side"; break;
-        case BLOCK_CHEST: textureName = "chest"; break;
-        case BLOCK_GLOWSTONE: textureName = "glowstone"; break;
-        case BLOCK_OBSIDIAN: textureName = "obsidian"; break;
-        case BLOCK_NETHERRACK: textureName = "netherrack"; break;
-        case BLOCK_SOUL_SAND: textureName = "soul_sand"; break;
-        case BLOCK_END_STONE: textureName = "end_stone"; break;
-        case BLOCK_PURPUR_BLOCK: textureName = "purpur_block"; break;
-        case BLOCK_QUARTZ_BLOCK: textureName = "quartz_block_side"; break;
-        case BLOCK_PACKED_ICE: textureName = "packed_ice"; break;
-        case BLOCK_BLUE_ICE: textureName = "blue_ice"; break;
-        case BLOCK_ICE: textureName = "ice"; break;
-        case BLOCK_SNOW_BLOCK: textureName = "snow"; break;
-        case BLOCK_CACTUS:
-            if (faceIndex == FACE_TOP) textureName = "cactus_top";
-            else if (faceIndex == FACE_BOTTOM) textureName = "cactus_bottom";
-            else textureName = "cactus_side";
-            break;
-        case BLOCK_PUMPKIN: textureName = "pumpkin_side"; break;
-        case BLOCK_JACK_O_LANTERN: 
-            if (faceIndex == FACE_FRONT) textureName = "jack_o_lantern";
-            else textureName = "pumpkin_side";
-            break;
-        case BLOCK_MELON: textureName = "melon_side"; break;
-        case BLOCK_HAY_BLOCK:
-            if (faceIndex == FACE_TOP || faceIndex == FACE_BOTTOM) textureName = "hay_block_top";
-            else textureName = "hay_block_side";
-            break;
-        
-        default: textureName = "stone"; break;
-    }
-    
-    int textureIndex = GetTextureIndex(textureName);
-    *u = textureManager.texCoords[textureIndex][0];
-    *v = textureManager.texCoords[textureIndex][1];
-    *w = textureManager.texCoords[textureIndex][2];
-    *h = textureManager.texCoords[textureIndex][3];
+    int index = 0;
+
+    if ((block >= 0) && (block < BLOCK_COUNT) && (faceIndex >= 0) && (faceIndex < 6)) index = faceTextures[block][faceIndex];
+    *u = textureManager.texCoords[index][0];
+    *v = textureManager.texCoords[index][1];
+    *w = textureManager.texCoords[index][2];
+    *h = textureManager.texCoords[index][3];
 }
 
 bool BlockNeedsAlphaBlending(BlockType block) {
@@ -853,161 +1093,5 @@ bool BlockNeedsAlphaBlending(BlockType block) {
 }
 
 const char* GetBlockTextureName(BlockType block, int faceIndex) {
-    // Map block types and faces to texture names (same logic as GetBlockTextureUV)
-    switch (block) {
-        case BLOCK_GRASS:
-            if (faceIndex == FACE_TOP) return "grass_block_top";
-            else if (faceIndex == FACE_BOTTOM) return "dirt";
-            else return "grass_block_side";
-        case BLOCK_DIRT: return "dirt";
-        case BLOCK_STONE: return "stone";
-        case BLOCK_COBBLESTONE: return "cobblestone";
-        case BLOCK_BEDROCK: return "bedrock";
-        case BLOCK_SAND: return "sand";
-        case BLOCK_GRAVEL: return "gravel";
-        case BLOCK_WATER: return "water_still";
-        case BLOCK_WATER_FALL:
-        case BLOCK_WATER_1:
-        case BLOCK_WATER_2:
-        case BLOCK_WATER_3:
-        case BLOCK_WATER_4:
-        case BLOCK_WATER_5:
-        case BLOCK_WATER_6:
-        case BLOCK_WATER_7: return "water_flow";
-        case BLOCK_BUCKET: return "bucket";
-        case BLOCK_WATER_BUCKET: return "water_bucket";
-        
-        // Wood blocks
-        case BLOCK_OAK_LOG:
-            if (faceIndex == FACE_TOP || faceIndex == FACE_BOTTOM) return "oak_log_top";
-            else return "oak_log";
-        case BLOCK_OAK_PLANKS: return "oak_planks";
-        case BLOCK_OAK_LEAVES: return "oak_leaves";
-        case BLOCK_BIRCH_LOG:
-            if (faceIndex == FACE_TOP || faceIndex == FACE_BOTTOM) return "birch_log_top";
-            else return "birch_log";
-        case BLOCK_BIRCH_PLANKS: return "birch_planks";
-        case BLOCK_BIRCH_LEAVES: return "birch_leaves";
-        case BLOCK_ACACIA_LOG:
-            if (faceIndex == FACE_TOP || faceIndex == FACE_BOTTOM) return "acacia_log_top";
-            else return "acacia_log";
-        case BLOCK_ACACIA_PLANKS: return "acacia_planks";
-        case BLOCK_ACACIA_LEAVES: return "acacia_leaves";
-        case BLOCK_DARK_OAK_LOG:
-            if (faceIndex == FACE_TOP || faceIndex == FACE_BOTTOM) return "dark_oak_log_top";
-            else return "dark_oak_log";
-        case BLOCK_DARK_OAK_PLANKS: return "dark_oak_planks";
-        case BLOCK_DARK_OAK_LEAVES: return "dark_oak_leaves";
-        
-        // Stone variants
-        case BLOCK_STONE_BRICKS: return "stone_bricks";
-        case BLOCK_MOSSY_STONE_BRICKS: return "mossy_stone_bricks";
-        case BLOCK_ANDESITE: return "andesite";
-        case BLOCK_GRANITE: return "granite";
-        case BLOCK_DIORITE: return "diorite";
-        case BLOCK_MOSSY_COBBLESTONE: return "mossy_cobblestone";
-        case BLOCK_SMOOTH_STONE: return "smooth_stone";
-        
-        // Sandstone
-        case BLOCK_SANDSTONE:
-            if (faceIndex == FACE_TOP) return "sandstone_top";
-            else if (faceIndex == FACE_BOTTOM) return "sandstone_bottom";
-            else return "sandstone";
-        case BLOCK_CHISELED_SANDSTONE: return "chiseled_sandstone";
-        case BLOCK_CUT_SANDSTONE: return "cut_sandstone";
-        case BLOCK_RED_SAND: return "red_sand";
-        case BLOCK_RED_SANDSTONE: return "red_sandstone";
-        
-        // Ores
-        case BLOCK_COAL_ORE: return "coal_ore";
-        case BLOCK_IRON_ORE: return "iron_ore";
-        case BLOCK_GOLD_ORE: return "gold_ore";
-        case BLOCK_DIAMOND_ORE: return "diamond_ore";
-        case BLOCK_REDSTONE_ORE: return "redstone_ore";
-        case BLOCK_EMERALD_ORE: return "emerald_ore";
-        case BLOCK_LAPIS_ORE: return "lapis_ore";
-        
-        // Metal blocks
-        case BLOCK_IRON_BLOCK: return "iron_block";
-        case BLOCK_GOLD_BLOCK: return "gold_block";
-        case BLOCK_DIAMOND_BLOCK: return "diamond_block";
-        case BLOCK_EMERALD_BLOCK: return "emerald_block";
-        case BLOCK_REDSTONE_BLOCK: return "redstone_block";
-        case BLOCK_LAPIS_BLOCK: return "lapis_block";
-        case BLOCK_COAL_BLOCK: return "coal_block";
-        
-        // Wool blocks
-        case BLOCK_WHITE_WOOL: return "white_wool";
-        case BLOCK_ORANGE_WOOL: return "orange_wool";
-        case BLOCK_MAGENTA_WOOL: return "magenta_wool";
-        case BLOCK_LIGHT_BLUE_WOOL: return "light_blue_wool";
-        case BLOCK_YELLOW_WOOL: return "yellow_wool";
-        case BLOCK_LIME_WOOL: return "lime_wool";
-        case BLOCK_PINK_WOOL: return "pink_wool";
-        case BLOCK_GRAY_WOOL: return "gray_wool";
-        case BLOCK_LIGHT_GRAY_WOOL: return "light_gray_wool";
-        case BLOCK_CYAN_WOOL: return "cyan_wool";
-        case BLOCK_PURPLE_WOOL: return "purple_wool";
-        case BLOCK_BLUE_WOOL: return "blue_wool";
-        case BLOCK_BROWN_WOOL: return "brown_wool";
-        case BLOCK_GREEN_WOOL: return "green_wool";
-        case BLOCK_RED_WOOL: return "red_wool";
-        case BLOCK_BLACK_WOOL: return "black_wool";
-        
-        // Glass
-        case BLOCK_GLASS: return "glass";
-        case BLOCK_WHITE_STAINED_GLASS: return "white_stained_glass";
-        case BLOCK_ORANGE_STAINED_GLASS: return "orange_stained_glass";
-        case BLOCK_MAGENTA_STAINED_GLASS: return "magenta_stained_glass";
-        case BLOCK_LIGHT_BLUE_STAINED_GLASS: return "light_blue_stained_glass";
-        case BLOCK_YELLOW_STAINED_GLASS: return "yellow_stained_glass";
-        case BLOCK_LIME_STAINED_GLASS: return "lime_stained_glass";
-        case BLOCK_PINK_STAINED_GLASS: return "pink_stained_glass";
-        case BLOCK_GRAY_STAINED_GLASS: return "gray_stained_glass";
-        case BLOCK_LIGHT_GRAY_STAINED_GLASS: return "light_gray_stained_glass";
-        case BLOCK_CYAN_STAINED_GLASS: return "cyan_stained_glass";
-        case BLOCK_PURPLE_STAINED_GLASS: return "purple_stained_glass";
-        case BLOCK_BLUE_STAINED_GLASS: return "blue_stained_glass";
-        case BLOCK_BROWN_STAINED_GLASS: return "brown_stained_glass";
-        case BLOCK_GREEN_STAINED_GLASS: return "green_stained_glass";
-        case BLOCK_RED_STAINED_GLASS: return "red_stained_glass";
-        case BLOCK_BLACK_STAINED_GLASS: return "black_stained_glass";
-        
-        // Special blocks
-        case BLOCK_BRICKS: return "bricks";
-        case BLOCK_BOOKSHELF: 
-            if (faceIndex == FACE_TOP || faceIndex == FACE_BOTTOM) return "oak_planks";
-            else return "bookshelf";
-        case BLOCK_CRAFTING_TABLE:
-            if (faceIndex == FACE_TOP) return "crafting_table_top";
-            else if (faceIndex == FACE_BOTTOM) return "oak_planks";
-            else return "crafting_table_side";
-        case BLOCK_FURNACE: return "furnace_side";
-        case BLOCK_CHEST: return "chest";
-        case BLOCK_GLOWSTONE: return "glowstone";
-        case BLOCK_OBSIDIAN: return "obsidian";
-        case BLOCK_NETHERRACK: return "netherrack";
-        case BLOCK_SOUL_SAND: return "soul_sand";
-        case BLOCK_END_STONE: return "end_stone";
-        case BLOCK_PURPUR_BLOCK: return "purpur_block";
-        case BLOCK_QUARTZ_BLOCK: return "quartz_block_side";
-        case BLOCK_PACKED_ICE: return "packed_ice";
-        case BLOCK_BLUE_ICE: return "blue_ice";
-        case BLOCK_ICE: return "ice";
-        case BLOCK_SNOW_BLOCK: return "snow";
-        case BLOCK_CACTUS:
-            if (faceIndex == FACE_TOP) return "cactus_top";
-            else if (faceIndex == FACE_BOTTOM) return "cactus_bottom";
-            else return "cactus_side";
-        case BLOCK_PUMPKIN: return "pumpkin_side";
-        case BLOCK_JACK_O_LANTERN: 
-            if (faceIndex == FACE_FRONT) return "jack_o_lantern";
-            else return "pumpkin_side";
-        case BLOCK_MELON: return "melon_side";
-        case BLOCK_HAY_BLOCK:
-            if (faceIndex == FACE_TOP || faceIndex == FACE_BOTTOM) return "hay_block_top";
-            else return "hay_block_side";
-        
-        default: return "stone";
-    }
-} 
+    return BlockFaceTexture(block, faceIndex);
+}

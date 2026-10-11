@@ -22,6 +22,7 @@ void InitTextureManager(void);
 void LoadBlockTextures(void);
 void UnloadTextureManager(void);
 int GetTextureIndex(const char* textureName);
+bool GetNamedTextureUV(const char *name, float *u, float *v, float *w, float *h);
 void GetBlockTextureUV(BlockType block, int faceIndex, float* u, float* v, float* w, float* h);
 Texture2D GetTextureAtlas(void);
 bool ValidateTextureManager(void);

@@ -43,6 +43,20 @@ Contracts: `PHYSICS.md`, `WORLD.md`, `SERVER.md`, `SHADERS.md`.
 
 Take the earliest slice in that table whose status is `TODO` and whose blockers are all `DONE`. One session does not take a second slice. S12 is the wide header split. It stays one session and one PR.
 
+## Session slice (ahead of the queue)
+
+A playable multiplayer path landed in one pass, before S01–S17. Those rows stay `TODO`. This is not parity for protocol sections, movement, or a second player body.
+
+What works:
+
+- The client creates an account (username, password, optional email) and logs in. There is no signup site.
+- `opencraft-server` listens on `0.0.0.0:25570`, ticks a 20 Hz loop, and is authoritative for block edits and for each account's hotbar.
+- Accounts, password hashes, the hotbar, the selected slot, the world seed, and block edits are in `opencraft.db` (WAL). sqlite-vec loads only when the extension is installed.
+- Two clients generate the same terrain from that seed and apply the same edits. Leaving and joining again restores the map, the hotbar, and the held slot.
+- SQLite runs on the server thread. S31 still owns the completion API and the Kore health route.
+
+Checked by `session_test` (register, reject, two clients, edit, disconnect, rejoin).
+
 ## S32: Texture colors
 
 Status: TODO
@@ -443,11 +457,11 @@ Out of scope: armor, baby zombies, reinforcements, other hostiles.
 
 ## S25: Four biomes
 
-Status: TODO
+Status: PARTIAL
 Blocked by: S08, S17
 Owns: `client/world_generation.c`, `client/world_generation.h`, `tests/biome_test.c`, `CMakeLists.txt`
 
-Columns are plains, forest, desert, or ocean. Forest places oak trees. Desert places sand and cactus. Ocean is water to sea level. Plains are grass. The same seed is stable across a reload. Other biome ids stay missing.
+Columns pick a surface palette. Forest places oak trees. Desert places sand and cactus. Ocean is water to sea level. Plains are grass. `MCC_BIOME_TOUR` walks every registry id. The same seed is stable across a reload. Palettes are not climate, caves, or structures.
 
 Done when:
 
