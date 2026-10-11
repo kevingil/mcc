@@ -1,5 +1,6 @@
 #include "world_generation.h"
 #include "biomes.h"
+#include "biome_houses.h"
 #include "raymath.h"
 #include <math.h>
 #include <stdlib.h>
@@ -72,17 +73,79 @@ static int TourLocalX(int x) {
     return local;
 }
 
+static float LerpKnot(float c, float c0, float c1, float h0, float h1)
+{
+    float t = (c - c0)/(c1 - c0);
+    return h0 + (h1 - h0)*t;
+}
+
+static float ContinentalBase(float c)
+{
+    float abyss = (float)(WATER_LEVEL - 20);
+    float deep = (float)(WATER_LEVEL - 18);
+    float shelf = (float)(WATER_LEVEL - 8);
+    float beachLow = (float)(WATER_LEVEL + 1);
+    float beachHigh = (float)(WATER_LEVEL + 2);
+    float inland = 0.0f;
+
+    if (c < -1.0f) c = -1.0f;
+    if (c > 1.0f) c = 1.0f;
+    inland = (float)(WATER_LEVEL + 6) + c*8.0f;
+    if (c < -0.55f) return LerpKnot(c, -1.0f, -0.55f, abyss, deep);
+    if (c < -0.42f) return LerpKnot(c, -0.55f, -0.42f, deep, shelf);
+    if (c < -0.30f) return shelf;
+    if (c < -0.26f) return LerpKnot(c, -0.30f, -0.26f, shelf, beachLow);
+    if (c < -0.12f) return LerpKnot(c, -0.26f, -0.12f, beachLow, beachHigh);
+    if (c < 0.05f) return LerpKnot(c, -0.12f, 0.05f, beachHigh, (float)(WATER_LEVEL + 6) + 0.05f*8.0f);
+    return inland;
+}
+
+static float Relief(float continentalness, float erosion)
+{
+    float fade = 0.0f;
+    float hill = 0.0f;
+
+    if (erosion >= 0.20f) return 0.0f;
+    if (continentalness <= -0.30f) return 0.0f;
+    fade = (continentalness - (-0.30f))/0.22f;
+    if (fade > 1.0f) fade = 1.0f;
+    hill = (0.20f - erosion)/(0.20f - (-1.0f));
+    if (hill < 0.0f) hill = 0.0f;
+    if (hill > 1.0f) hill = 1.0f;
+    return hill*hill*30.0f*fade;
+}
+
+static int SnowLineFor(float temperature)
+{
+    float t = (temperature + 1.0f)*0.5f;
+    float coldLine = (float)(WATER_LEVEL + 14);
+    float hotLine = (float)(WATER_LEVEL + 44);
+    float line = 0.0f;
+
+    if (t < 0.0f) t = 0.0f;
+    if (t > 1.0f) t = 1.0f;
+    line = coldLine + t*(hotLine - coldLine);
+    return (int)line;
+}
+
 float GetTerrainHeight(int x, int z) {
-    const Biome *biome = BiomeAt(x, z);
-    // Generate height using multiple octaves of noise
+    const Biome *biome = NULL;
+    float continentalness = 0.0f;
+    float erosion = 0.0f;
     float height = 0.0f;
+    float local = 0.0f;
+    float mask = 0.0f;
+    float target = (float)(WATER_LEVEL - 1);
 
     if (BiomeTourActive()) {
         int localX = TourLocalX(x);
         int mid = BIOME_STRIDE/2;
-        int dx = abs(localX - mid);
-        int dz = abs(z - mid);
+        int dx = 0;
+        int dz = 0;
 
+        biome = BiomeAt(x, z);
+        dx = abs(localX - mid);
+        dz = abs(z - mid);
         if (biome->flags & BIOME_VOID) {
             if ((dx <= 2) && (dz <= 2)) return (float)(WATER_LEVEL + 4);
             return 6.0f;
@@ -92,21 +155,14 @@ float GetTerrainHeight(int x, int z) {
         }
         return (float)(WATER_LEVEL + biome->lift);
     }
-    float amplitude = TERRAIN_HEIGHT;
-    float frequency = TERRAIN_SCALE;
-    
-    // Add multiple octaves for more interesting terrain
-    for (int i = 0; i < 4; i++) {
-        height += SimplexNoise2D(x * frequency, z * frequency) * amplitude;
-        amplitude *= 0.5f;
-        frequency *= 2.0f;
-    }
-    
-    // Low continent noise opens lakes and oceans. High ground stays dry.
-    float continent = SimplexNoise2D(x*0.0025f, z*0.0025f);
-    if (continent < 0.05f) height -= (0.05f - continent)*48.0f;
 
-    return WATER_LEVEL + height;
+    BiomeClimate(x, z, NULL, NULL, &continentalness, &erosion, NULL);
+    local = PerlinNoise2D((float)x*0.022f, (float)z*0.022f)*1.6f;
+    local += PerlinNoise2D((float)x*0.061f, (float)z*0.061f)*0.8f;
+    height = ContinentalBase(continentalness) + Relief(continentalness, erosion) + local;
+    mask = BiomeRiverMask(x, z);
+    if ((mask > 0.0f) && (height > target)) height = height + (target - height)*mask;
+    return height;
 }
 
 float GetSurfaceLevel(int x, int z) {
@@ -127,39 +183,111 @@ float GetSurfaceLevel(int x, int z) {
     }
 }
 
+static int WaterBeside(int x, int z, int *faceX, int *faceZ)
+{
+    int dir = 0;
+
+    for (dir = 0; dir < 4; dir++)
+    {
+        int nx = x + ((dir == 0) ? 1 : (dir == 1) ? -1 : 0);
+        int nz = z + ((dir == 2) ? 1 : (dir == 3) ? -1 : 0);
+
+        if ((int)GetTerrainHeight(nx, nz) < WATER_LEVEL)
+        {
+            *faceX = nx - x;
+            *faceZ = nz - z;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 bool FindShoreSpawn(Vector3 *position, float *yaw) {
-    int bestDist = 1000000;
+    int bestDist = 8000000;
     int bestX = 0;
     int bestZ = 0;
     int faceX = 0;
     int faceZ = 1;
     bool found = false;
+    int radius = 0;
 
     if ((position == NULL) || (yaw == NULL)) return false;
 
-    for (int radius = 1; radius <= 80; radius++) {
-        for (int x = -radius; x <= radius; x++) {
-            for (int z = -radius; z <= radius; z++) {
+    for (radius = 1; radius <= 160; radius++) {
+        int x = 0;
+        int z = 0;
+
+        for (x = -radius; x <= radius; x++) {
+            for (z = -radius; z <= radius; z++) {
                 int dist = x*x + z*z;
+                int fx = 0;
+                int fz = 0;
+
                 if ((abs(x) != radius) && (abs(z) != radius)) continue;
                 if ((dist >= bestDist) || ((int)GetTerrainHeight(x, z) <= WATER_LEVEL)) continue;
-
-                for (int dir = 0; dir < 4; dir++) {
-                    int nx = x + ((dir == 0) ? 1 : (dir == 1) ? -1 : 0);
-                    int nz = z + ((dir == 2) ? 1 : (dir == 3) ? -1 : 0);
-                    if ((int)GetTerrainHeight(nx, nz) < WATER_LEVEL) {
-                        bestDist = dist;
-                        bestX = x;
-                        bestZ = z;
-                        faceX = nx - x;
-                        faceZ = nz - z;
-                        found = true;
-                        break;
-                    }
-                }
+                if (!WaterBeside(x, z, &fx, &fz)) continue;
+                bestDist = dist;
+                bestX = x;
+                bestZ = z;
+                faceX = fx;
+                faceZ = fz;
+                found = true;
             }
         }
         if (found) break;
+    }
+
+    if (!found)
+    {
+        int ray = 0;
+
+        for (ray = 0; ray < 24; ray++)
+        {
+            float ang = (float)ray*(6.2831853f/24.0f);
+            int stepX = (int)lroundf(cosf(ang)*2.0f);
+            int stepZ = (int)lroundf(sinf(ang)*2.0f);
+            int prevLand = ((int)GetTerrainHeight(0, 0) > WATER_LEVEL) ? 1 : 0;
+            int prevX = 0;
+            int prevZ = 0;
+            int along = 0;
+
+            if ((stepX == 0) && (stepZ == 0)) continue;
+            for (along = 1; along <= 2200; along++)
+            {
+                int x = stepX*along;
+                int z = stepZ*along;
+                int land = ((int)GetTerrainHeight(x, z) > WATER_LEVEL) ? 1 : 0;
+                int back = 0;
+
+                if (land == prevLand)
+                {
+                    prevX = x;
+                    prevZ = z;
+                    continue;
+                }
+                for (back = 1; back <= 2; back++)
+                {
+                    int sx = prevX + ((x - prevX)*back)/2;
+                    int sz = prevZ + ((z - prevZ)*back)/2;
+                    int fx = 0;
+                    int fz = 0;
+
+                    if ((int)GetTerrainHeight(sx, sz) <= WATER_LEVEL) continue;
+                    if (!WaterBeside(sx, sz, &fx, &fz)) continue;
+                    bestX = sx;
+                    bestZ = sz;
+                    faceX = fx;
+                    faceZ = fz;
+                    found = true;
+                    break;
+                }
+                if (found) break;
+                prevX = x;
+                prevZ = z;
+                prevLand = land;
+            }
+            if (found) break;
+        }
     }
 
     if (!found) return false;
@@ -256,14 +384,28 @@ void GenerateChunk(Chunk* chunk) {
             BlockType surface = (BlockType)biome->surface;
             BlockType filler = (BlockType)biome->filler;
             BlockType rock = (BlockType)biome->rock;
+            float temperature = 0.0f;
+            int snowLine = WORLD_HEIGHT;
 
-            if (!BiomeTourActive() && (height <= WATER_LEVEL + 1) && !(biome->flags & BIOME_OCEAN)) {
-                surface = BLOCK_SAND;
-                filler = BLOCK_SAND;
+            if (!BiomeTourActive())
+            {
+                BiomeClimate(worldX, worldZ, &temperature, NULL, NULL, NULL, NULL);
+                snowLine = SnowLineFor(temperature);
+                if ((height == WATER_LEVEL) && !(biome->flags & BIOME_OCEAN))
+                {
+                    if ((surface != BLOCK_SAND) && (surface != BLOCK_STONE) && (surface != BLOCK_SNOW_BLOCK) && (surface != BLOCK_GRAVEL))
+                    {
+                        surface = BLOCK_SAND;
+                    }
+                }
             }
             if (biome->flags & BIOME_BANDS) {
                 surface = BandBlock(height);
                 filler = BandBlock(height - 1);
+            }
+            if ((!BiomeTourActive()) && (!(biome->flags & BIOME_OCEAN)) && (surface != BLOCK_SNOW_BLOCK) && (height > WATER_LEVEL) && (height > snowLine))
+            {
+                surface = BLOCK_SNOW_BLOCK;
             }
 
             for (int y = 0; y <= height; y++) {
@@ -309,6 +451,11 @@ void GenerateChunk(Chunk* chunk) {
                 int top = height + 3;
                 if (top >= WORLD_HEIGHT) top = WORLD_HEIGHT - 1;
                 for (int y = 0; y <= top; y++) chunk->blocks[x][y][z] = BLOCK_BEDROCK;
+            }
+
+            if (BiomeTourActive())
+            {
+                BiomeHousesStamp(chunk, x, z, worldX, worldZ, height);
             }
         }
     }
