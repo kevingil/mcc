@@ -27,6 +27,7 @@
 #include "net_session.h"
 #include "menu_ui.h"
 #include "biomes.h"
+#include "hud.h"
 #include <GL/gl.h>
 #include <math.h>
 #include <stdio.h>
@@ -226,6 +227,7 @@ void InitGameplayScreen(void)
 {
     framesCounter = 0;
     finishScreen = 0;
+    HudReset();
     
     // Reset pause state
     gamePaused = false;
@@ -340,7 +342,16 @@ void UpdateGameplayScreen(void)
 {
     framesCounter++;
     NoteFrameTime();
-    if (IsKeyPressed(KEY_F3) && !player.searchFocused) debugHud = !debugHud;
+    // Like vanilla, F3 toggles the debug screen on release unless it was used as a combo modifier.
+    static bool f3Combo = false;
+    if (IsKeyPressed(KEY_F3)) f3Combo = false;
+    if (IsKeyDown(KEY_F3) && IsKeyPressed(KEY_F4))
+    {
+        f3Combo = true;
+        player.gameMode = (player.gameMode == GAME_MODE_CREATIVE)? GAME_MODE_SURVIVAL : GAME_MODE_CREATIVE;
+        HudChat((player.gameMode == GAME_MODE_CREATIVE)? "Set own game mode to Creative Mode" : "Set own game mode to Survival Mode", WHITE);
+    }
+    if (IsKeyReleased(KEY_F3) && !f3Combo && !player.searchFocused && !player.inventoryOpen) debugHud = !debugHud;
     
     // Handle ESC key for pause menu (only when inventory is not open)
     if (IsKeyPressed(KEY_ESCAPE))
@@ -424,6 +435,7 @@ void UpdateGameplayScreen(void)
         
         // Update player (handles input, physics, interaction)
         UpdatePlayer(&player, &world);
+        HudUpdate(&player, &world);
 
         if (NetSessionIsInWorld())
         {
@@ -691,18 +703,13 @@ void DrawGameplayScreen(void)
     // 2D UI rendering
     if (!gamePaused) {
         // Draw inventory UI if inventory is open, otherwise draw normal UI
-        if (player.inventoryOpen) {
-            DrawInventory(&player);
-        } else {
-            DrawPlayerUI(&player);
-        }
+        HudDraw(&player, debugHud);
+        HudDrawMessages();
+        if (player.inventoryOpen) DrawInventory(&player);
     }
     
     if (debugHud && !gamePaused && !player.inventoryOpen) DrawDebugHud();
 
-    if (!IsCursorHidden() && !gamePaused && !player.inventoryOpen && !debugHud) {
-        DrawText("Click to play", GetScreenWidth()/2 - 70, GetScreenHeight() - 40, 20, YELLOW);
-    }
     
     if (BiomeTourActive())
     {
@@ -733,21 +740,6 @@ void DrawGameplayScreen(void)
         {
             DrawText(edit, 12, 172, 22, (Color){ 80, 255, 120, 255 });
         }
-    }
-
-    if (GetActiveWorldName()[0] != '\0')
-    {
-        const char *worldName = GetActiveWorldName();
-        int nameWidth = MeasureText(worldName, 20);
-        char seedLabel[32] = { 0 };
-        int seedWidth = 0;
-
-        DrawText(worldName, GetScreenWidth()/2 - nameWidth/2 + 1, 9, 20, BLACK);
-        DrawText(worldName, GetScreenWidth()/2 - nameWidth/2, 8, 20, WHITE);
-        snprintf(seedLabel, sizeof(seedLabel), "Seed %u", WorldSaveSeed());
-        seedWidth = MeasureText(seedLabel, 16);
-        DrawText(seedLabel, GetScreenWidth()/2 - seedWidth/2 + 1, 31, 16, BLACK);
-        DrawText(seedLabel, GetScreenWidth()/2 - seedWidth/2, 30, 16, WHITE);
     }
 }
 
