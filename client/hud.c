@@ -226,6 +226,21 @@ static void DrawStatusBars(const Player *player, int sw, int sh)
     }
 }
 
+// White type over the world. The shadow is black: a quarter-bright shadow
+// vanishes on snow and sand.
+static void DrawWorldText(const char *text, int x, int y, int alpha)
+{
+    Color ink = { 255, 255, 255, 255 };
+    Color shadow = { 0, 0, 0, 255 };
+
+    if ((text == NULL) || (text[0] == '\0') || (alpha <= 0)) return;
+    if (alpha > 255) alpha = 255;
+    ink.a = (unsigned char)alpha;
+    shadow.a = (unsigned char)alpha;
+    GuiDrawText(text, x + 1, y + 1, shadow, false);
+    GuiDrawText(text, x, y, ink, false);
+}
+
 static void DrawHeldName(const Player *player, int sw, int sh)
 {
     const char *name = NULL;
@@ -236,7 +251,7 @@ static void DrawHeldName(const Player *player, int sw, int sh)
     if (alpha > 255) alpha = 255;
     if (player->gameMode == GAME_MODE_CREATIVE) y += 14;
     name = GetBlockName(lastHeld);
-    GuiDrawText(name, (sw - GuiTextWidth(name))/2, y, (Color){ 255, 255, 255, (unsigned char)alpha }, true);
+    DrawWorldText(name, (sw - GuiTextWidth(name))/2, y, alpha);
 }
 
 void HudDraw(const Player *player, bool debug)
@@ -282,8 +297,12 @@ void HudDrawMessages(void)
         if (alpha > 8)
         {
             int width = GuiTextWidth(actionText);
+            int textX = sw/2 - width/2;
+            int textY = sh - 68 - 4;
+            int bandAlpha = alpha/2;
 
-            GuiDrawText(actionText, sw/2 + (-width/2), sh - 68 - 4, (Color){ 255, 255, 255, (unsigned char)alpha }, true);
+            GuiFill(textX - 2, textY - 1, textX + width + 3, textY + 9, (Color){ 0, 0, 0, (unsigned char)bandAlpha });
+            DrawWorldText(actionText, textX, textY, alpha);
         }
     }
 

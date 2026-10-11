@@ -28,6 +28,7 @@
 #include "menu_ui.h"
 #include "biomes.h"
 #include "hud.h"
+#include "gui.h"
 #include <GL/gl.h>
 #include <math.h>
 #include <stdio.h>
@@ -488,14 +489,19 @@ static void NoteFrameTime(void)
     if (frameFilled < 240) frameFilled++;
 }
 
+// One debug line in GUI pixels: 0xE0E0E0 text on a 0x90505050 band.
 static void DebugText(int x, int y, const char *text, int alignRight)
 {
-    int size = 10;
-    int width = MeasureText(text, size);
-    int drawX = alignRight ? (GetScreenWidth() - 4 - width) : x;
+    int width = 0;
+    int drawX = 0;
+    Color band = { 80, 80, 80, 144 };
+    Color ink = { 224, 224, 224, 255 };
 
-    DrawText(text, drawX + 1, y + 1, size, BLACK);
-    DrawText(text, drawX, y, size, WHITE);
+    if ((text == NULL) || (text[0] == '\0')) return;
+    width = GuiTextWidth(text);
+    drawX = (alignRight != 0)? (GuiWidth() - 2 - width) : x;
+    GuiFill(drawX - 1, y - 1, drawX + width + 1, y + 8, band);
+    GuiDrawText(text, drawX, y, ink, true);
 }
 
 static void ReadMachine(char *cpu, int cpuCap, int *cores, long *rssKb, long *virtKb)
@@ -559,7 +565,8 @@ static void DrawFrameGraph(int x, int y, int width, int height, Color color)
     float maxMs = 0.0f;
     float sum = 0.0f;
 
-    DrawRectangle(x, y - height, width, height, (Color){ 0, 0, 0, 140 });
+    DebugText(x, y - height - 21, TextFormat("%d FPS", GetFPS()), 0);
+    GuiFill(x, y - height, x + width, y, (Color){ 0, 0, 0, 140 });
     if (frameFilled <= 0) return;
     for (i = 0; i < frameFilled; i++)
     {
@@ -574,7 +581,7 @@ static void DrawFrameGraph(int x, int y, int width, int height, Color color)
         if (bar < 1) bar = 1;
         if (bar > height) bar = height;
         sx = x + (i*width)/240;
-        DrawRectangle(sx, y - bar, 1, bar, color);
+        GuiFill(sx, y - bar, sx + 1, y, color);
     }
     DebugText(x, y - height - 12, TextFormat("%.0f ms min   %.0f ms avg   %.0f ms max", minMs, sum/(float)frameFilled, maxMs), 0);
 }
@@ -602,7 +609,7 @@ static void DrawDebugHud(void)
     int loaded = 0;
     int i = 0;
     int y = 2;
-    int line = 11;
+    int line = 9;
     float yawDeg = player.yaw*(180.0f/PI);
     float pitchDeg = player.pitch*(180.0f/PI);
     float lookX = sinf(player.yaw);
@@ -641,6 +648,7 @@ static void DrawDebugHud(void)
         if (world.chunks[i].hasMesh) meshed++;
     }
 
+    GuiBegin();
     DebugText(2, y, TextFormat("OpenCraft %s", OPENCRAFT_VERSION), 0); y += line;
     DebugText(2, y, TextFormat("%d fps  T: %.1f ms  vsync: %s", GetFPS(), GetFrameTime()*1000.0f,
         IsWindowState(FLAG_VSYNC_HINT) ? "on" : "off"), 0); y += line;
@@ -677,8 +685,11 @@ static void DrawDebugHud(void)
     DebugText(0, y, (gpu != NULL) ? gpu : "GPU unknown", 1); y += line;
     DebugText(0, y, (glVersion != NULL) ? glVersion : "", 1);
 
-    DrawFrameGraph(4, GetScreenHeight() - 8, 240, 36, (Color){ 80, 255, 80, 255 });
-    DebugText(4, GetScreenHeight() - 62, TextFormat("%d FPS", GetFPS()), 0);
+    if (IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT))
+    {
+        DrawFrameGraph(4, GuiHeight() - 8, 240, 36, (Color){ 80, 255, 80, 255 });
+    }
+    GuiEnd();
 }
 
 // Gameplay Screen Draw logic
