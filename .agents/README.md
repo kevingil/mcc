@@ -37,7 +37,7 @@ The server has no resources and no window. It listens on 0.0.0.0:25570 and store
 ./build/server/opencraft-server --port 25570 --world world
 ```
 
-Enter on the title screen starts the world. The rest of the controls are in the project README. With no sound card, raylib prints ALSA warnings and continues.
+With no sound card, raylib prints ALSA warnings and continues.
 
 ## Smoke test
 

@@ -12,9 +12,9 @@ The Java Edition parity tracker lives in `docs/parity/`. `docs/parity/SLICES.md`
 
 ### Features
 
- - **First-person 3D exploration** with smooth WASD movement and mouse look
+ - **First-person 3D exploration**
  - **Infinite voxel world** with chunk-based loading and procedural terrain generation
- - **Block interaction system** - place and destroy blocks with left/right mouse clicks
+ - **Block interaction** - place and destroy blocks
  - **Multiple block types** - grass, dirt, stone, wood, leaves, water
  - **Hotbar inventory** with 9 slots for different block types
  - **Realistic physics** - gravity, collision detection, and jumping
@@ -37,31 +37,33 @@ Worlds live in `saves/world_<id>/`. `level.dat` is gzip NBT for the name, seed, 
 
 A new world gets a random seed. The create screen accepts a seed too; leave it blank to keep the random one. Hills, water, and trees are rebuilt from that seed. Blocks you place stay in the region file.
 
-Water is a source block. It spreads seven steps, falls down holes, and becomes a new source where two sources meet on solid ground. Lakes and oceans fill the low ground with sand beds. A new world starts on a shore. The bucket on the hotbar picks up a source and places it again. Space swims while you are in the water.
+Water is a source block. It spreads seven steps, falls down holes, and becomes a new source where two sources meet on solid ground. Lakes and oceans fill the low ground with sand beds. A new world starts on a shore. The bucket on the hotbar picks up a source and places it again.
 
 ### In game
 
 ![Gameplay](screenshots/gameplay.png "Gameplay")
 
-The hotbar, crosshair, and world readout stay on screen while you move. Escape opens the pause menu.
+The hotbar shows the held blocks, with hearts and food above it.
+
+![Survival inventory](screenshots/inventory.png "Survival inventory")
+
+Survival inventory has the player, armor slots, a crafting grid, and the storage rows.
+
+![Creative inventory](screenshots/creative.png "Creative inventory")
+
+Creative mode opens a tabbed item picker.
+
+![Debug screen](screenshots/debug.png "Debug screen")
+
+The debug screen lists the session, position, and biome. Each line sits on a gray band.
 
 ![Pause menu](screenshots/pause_menu.png "Pause menu")
 
-### Controls
+The pause menu covers the world.
 
-Keyboard:
- - **WASD** - Move player
- - **SPACE** - Jump
- - **SHIFT** - Run/Sprint
- - **1-9** - Select block type from hotbar
- - **ESC** - Pause the game
- - **ENTER** - Return to main menu
+![Biome house](screenshots/biome.png "Biome house")
 
-Mouse:
- - **Mouse Movement** - Look around (first-person camera)
- - **Left Click** - Break/destroy blocks
- - **Right Click** - Place selected block
-
+The biome tour builds one small house in each biome, with a door, windows, and a furnished room.
 
 ## Getting Started
 
