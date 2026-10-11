@@ -31,6 +31,100 @@ static Texture2D LoadUiTexture(const char *path, int filter)
     return texture;
 }
 
+// The title panorama is the Good Vibes art. Shift its baked cyan water and
+// yellow sand toward the same blues and beiges the world uses at load time.
+static void ShiftPanoramaPixel(Color *pixel)
+{
+    float r = pixel->r/255.0f;
+    float g = pixel->g/255.0f;
+    float b = pixel->b/255.0f;
+    float max = r;
+    float min = r;
+    float hue = 0.0f;
+    float span = 0.0f;
+    float sat = 0.0f;
+    float nr = 0.0f;
+    float ng = 0.0f;
+    float nb = 0.0f;
+    float hueDeg = 0.0f;
+    int sector = 0;
+    float f = 0.0f;
+    float p = 0.0f;
+    float q = 0.0f;
+    float t = 0.0f;
+
+    if (g > max) max = g;
+    if (b > max) max = b;
+    if (g < min) min = g;
+    if (b < min) min = b;
+    span = max - min;
+    if ((max <= 0.0f) || (span <= 0.0001f)) return;
+    sat = span/max;
+    if (max == r) hue = (g - b)/span;
+    else if (max == g) hue = 2.0f + (b - r)/span;
+    else hue = 4.0f + (r - g)/span;
+    if (hue < 0.0f) hue += 6.0f;
+    hueDeg = hue*60.0f;
+
+    if ((hueDeg >= 40.0f) && (hueDeg <= 68.0f) && (sat > 0.28f) && (max > 0.55f) && (b < ((g < r)? g : r) - 0.10f))
+    {
+        hue = 46.0f/60.0f;
+        sat *= 0.42f;
+        max = max*0.92f + 0.06f;
+        if (max > 1.0f) max = 1.0f;
+    }
+    else if ((hueDeg >= 155.0f) && (hueDeg <= 205.0f) && (sat > 0.18f) && (max > 0.25f))
+    {
+        hue = 208.0f/60.0f;
+        sat *= 0.95f;
+        if (sat > 1.0f) sat = 1.0f;
+    }
+    else if ((hueDeg >= 68.0f) && (hueDeg <= 140.0f) && (sat > 0.20f) && (g > r) && (g > b + 0.04f))
+    {
+        hue = 92.0f/60.0f;
+        if (sat < 0.35f) sat = 0.35f;
+    }
+    else return;
+
+    sector = (int)hue;
+    f = hue - (float)sector;
+    p = max*(1.0f - sat);
+    q = max*(1.0f - sat*f);
+    t = max*(1.0f - sat*(1.0f - f));
+    if (sector < 0) sector = 0;
+    switch (sector%6)
+    {
+        case 0: nr = max; ng = t; nb = p; break;
+        case 1: nr = q; ng = max; nb = p; break;
+        case 2: nr = p; ng = max; nb = t; break;
+        case 3: nr = p; ng = q; nb = max; break;
+        case 4: nr = t; ng = p; nb = max; break;
+        default: nr = max; ng = p; nb = q; break;
+    }
+    pixel->r = (unsigned char)(nr*255.0f);
+    pixel->g = (unsigned char)(ng*255.0f);
+    pixel->b = (unsigned char)(nb*255.0f);
+}
+
+static Texture2D LoadPanorama(const char *path)
+{
+    Image image = LoadImage(path);
+    Texture2D texture = { 0 };
+    Color *pixels = NULL;
+    int count = 0;
+    int i = 0;
+
+    if (image.data == NULL) return texture;
+    ImageFormat(&image, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+    pixels = (Color *)image.data;
+    count = image.width*image.height;
+    for (i = 0; i < count; i++) ShiftPanoramaPixel(&pixels[i]);
+    texture = LoadTextureFromImage(image);
+    UnloadImage(image);
+    if (texture.id != 0) SetTextureFilter(texture, TEXTURE_FILTER_BILINEAR);
+    return texture;
+}
+
 static Texture2D LoadNeutralStone(void)
 {
     Image image = LoadImage("resources/textures/block/stone.png");
@@ -394,7 +488,7 @@ void InitMenuUi(void)
         char path[96] = { 0 };
 
         snprintf(path, sizeof(path), "resources/textures/gui/title/background/panorama_%d.png", i);
-        panorama[i] = LoadUiTexture(path, TEXTURE_FILTER_BILINEAR);
+        panorama[i] = LoadPanorama(path);
     }
 
     panoramaOverlay = LoadUiTexture("resources/textures/gui/title/background/panorama_overlay.png", TEXTURE_FILTER_BILINEAR);

@@ -2,7 +2,7 @@
 
 ## OpenCraft
 
-![OpenCraft title](screenshots/menu_title.png "OpenCraft title")
+![OpenCraft title](screenshots/title.png "OpenCraft title")
 
 ### Description
 
@@ -23,7 +23,7 @@ The Java Edition parity tracker lives in `docs/parity/`. `docs/parity/SLICES.md`
 
 ### Menu
 
-![Select World](screenshots/menu_worlds.png "Select World")
+![Select World](screenshots/worlds.png "Select World")
 
 The game opens on the OpenCraft title screen.
 
@@ -41,7 +41,7 @@ Water is a source block. It spreads seven steps, falls down holes, and becomes a
 
 ### In game
 
-![Gameplay](screenshots/gameplay.png "Gameplay")
+![Gameplay](screenshots/hud.png "Gameplay")
 
 The hotbar shows the held blocks, with hearts and food above it.
 
@@ -57,7 +57,7 @@ Creative mode opens a tabbed item picker.
 
 The debug screen lists the session, position, and biome. Each line sits on a gray band.
 
-![Pause menu](screenshots/pause_menu.png "Pause menu")
+![Pause menu](screenshots/pause.png "Pause menu")
 
 The pause menu covers the world.
 
