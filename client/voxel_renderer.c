@@ -478,7 +478,7 @@ static const char *const dyeNames[16] = {
 
 // Flat item sprites the inventory draws. They share the block atlas.
 static const char *const itemTextureNames[] = {
-    "bucket", "water_bucket", "sign", "redstone", "compass_00", "diamond_pickaxe", "paper"
+    "bucket", "water_bucket", "sign", "redstone", "compass_00", "diamond_pickaxe", "paper", "lava_bucket", "apple"
 };
 
 static int faceTextures[BLOCK_COUNT][6] = { 0 };

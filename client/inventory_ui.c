@@ -1,985 +1,1768 @@
 #include "player.h"
-#include "menu_ui.h"
-#include "screens.h"
-#include "voxel_renderer.h"
+#include "crafting.h"
+#include "gui.h"
+#include "hud.h"
+#include "player_model.h"
+#include "text_field.h"
 
+#include <ctype.h>
+#include <stdio.h>
 #include <string.h>
 
-typedef struct CraftRecipe {
-    const char *name;
-    BlockType item;
-    int kind;
-    BlockType out;
-    int outCount;
-    int width;
-} CraftRecipe;
+// The three container screens: the player's own inventory with its 2x2 grid,
+// the crafting table, and the creative tabs. Slot positions, the click rules,
+// the drag spreading, and the draw order follow the vanilla screens.
 
-static const CraftRecipe recipes[] = {
-    { "Oak Planks", BLOCK_OAK_LOG, 1, BLOCK_OAK_PLANKS, 4, 2 },
-    { "Birch Planks", BLOCK_BIRCH_LOG, 1, BLOCK_BIRCH_PLANKS, 4, 2 },
-    { "Acacia Planks", BLOCK_ACACIA_LOG, 1, BLOCK_ACACIA_PLANKS, 4, 2 },
-    { "Dark Oak Planks", BLOCK_DARK_OAK_LOG, 1, BLOCK_DARK_OAK_PLANKS, 4, 2 },
-    { "Crafting Table", BLOCK_OAK_PLANKS, 4, BLOCK_CRAFTING_TABLE, 1, 2 },
-    { "Sandstone", BLOCK_SAND, 4, BLOCK_SANDSTONE, 1, 2 },
-    { "Stone Bricks", BLOCK_COBBLESTONE, 4, BLOCK_STONE_BRICKS, 1, 2 },
-    { "Furnace", BLOCK_COBBLESTONE, 8, BLOCK_FURNACE, 1, 3 },
-    { "Chest", BLOCK_OAK_PLANKS, 8, BLOCK_CHEST, 1, 3 }
+#define MENU_SLOT_MAX 64
+#define PICKER_MAX 512
+#define SLOT_NONE (-1)
+#define SLOT_OUTSIDE (-999)
+#define SURVIVAL_WIDTH 176
+#define SURVIVAL_HEIGHT 166
+#define CREATIVE_WIDTH 195
+#define CREATIVE_HEIGHT 136
+#define DOUBLE_CLICK_SECONDS 0.25
+#define OFFHAND_BUTTON 40
+
+typedef enum {
+    SCREEN_INVENTORY = 0,
+    SCREEN_CRAFTING,
+    SCREEN_CREATIVE
+} ScreenKind;
+
+typedef enum {
+    SLOT_RESULT = 0,
+    SLOT_CRAFT,
+    SLOT_ARMOR,
+    SLOT_STORAGE,
+    SLOT_HOTBAR,
+    SLOT_OFFHAND,
+    SLOT_PICKER,
+    SLOT_DESTROY
+} SlotKind;
+
+typedef enum {
+    CLICK_PICKUP = 0,
+    CLICK_QUICK_MOVE,
+    CLICK_SWAP,
+    CLICK_CLONE,
+    CLICK_THROW,
+    CLICK_PICKUP_ALL
+} ClickType;
+
+typedef enum {
+    TAB_KIND_CATEGORY = 0,
+    TAB_KIND_HOTBAR,
+    TAB_KIND_SEARCH,
+    TAB_KIND_INVENTORY
+} TabKind;
+
+enum {
+    TAB_BUILDING = 0,
+    TAB_COLORED,
+    TAB_NATURAL,
+    TAB_FUNCTIONAL,
+    TAB_REDSTONE,
+    TAB_HOTBAR,
+    TAB_SEARCH,
+    TAB_TOOLS,
+    TAB_COMBAT,
+    TAB_FOOD,
+    TAB_INGREDIENTS,
+    TAB_SPAWN_EGGS,
+    TAB_INVENTORY,
+    TAB_COUNT
 };
 
-static Texture2D guiIcons = { 0 };
-static Texture2D guiSteve = { 0 };
-static int guiReady = 0;
+typedef struct {
+    SlotKind kind;
+    int index;
+    int x;
+    int y;
+} MenuSlot;
 
-static int RecipeCount(void)
+typedef struct {
+    BlockType block;
+    int count;
+} Stack;
+
+typedef struct {
+    BlockType block;
+    int count;
+    int lockedRow;          // An empty saved hotbar row shows a locked paper, -1 otherwise
+} PickerEntry;
+
+typedef struct {
+    const char *name;
+    bool top;
+    int column;
+    TabKind kind;
+    BlockType iconBlock;
+    const char *iconTexture;
+    const BlockType *items;
+    int itemCount;
+} CreativeTab;
+
+#define LIST_COUNT(list) ((int)(sizeof(list)/sizeof((list)[0])))
+
+static const BlockType buildingItems[] = {
+    BLOCK_OAK_LOG, BLOCK_OAK_PLANKS, BLOCK_BIRCH_LOG, BLOCK_BIRCH_PLANKS, BLOCK_ACACIA_LOG, BLOCK_ACACIA_PLANKS,
+    BLOCK_DARK_OAK_LOG, BLOCK_DARK_OAK_PLANKS, BLOCK_STONE, BLOCK_COBBLESTONE, BLOCK_MOSSY_COBBLESTONE, BLOCK_SMOOTH_STONE,
+    BLOCK_STONE_BRICKS, BLOCK_CRACKED_STONE_BRICKS, BLOCK_MOSSY_STONE_BRICKS, BLOCK_GRANITE, BLOCK_DIORITE, BLOCK_ANDESITE,
+    BLOCK_BRICKS, BLOCK_SANDSTONE, BLOCK_CHISELED_SANDSTONE, BLOCK_CUT_SANDSTONE, BLOCK_RED_SANDSTONE, BLOCK_PRISMARINE,
+    BLOCK_QUARTZ_BLOCK, BLOCK_CHISELED_QUARTZ_BLOCK, BLOCK_QUARTZ_PILLAR, BLOCK_PURPUR_BLOCK, BLOCK_COAL_BLOCK,
+    BLOCK_IRON_BLOCK, BLOCK_GOLD_BLOCK, BLOCK_REDSTONE_BLOCK, BLOCK_EMERALD_BLOCK, BLOCK_LAPIS_BLOCK, BLOCK_DIAMOND_BLOCK
+};
+
+static const BlockType coloredItems[] = {
+    BLOCK_WHITE_WOOL, BLOCK_LIGHT_GRAY_WOOL, BLOCK_GRAY_WOOL, BLOCK_BLACK_WOOL, BLOCK_BROWN_WOOL, BLOCK_RED_WOOL,
+    BLOCK_ORANGE_WOOL, BLOCK_YELLOW_WOOL, BLOCK_LIME_WOOL, BLOCK_GREEN_WOOL, BLOCK_CYAN_WOOL, BLOCK_LIGHT_BLUE_WOOL,
+    BLOCK_BLUE_WOOL, BLOCK_PURPLE_WOOL, BLOCK_MAGENTA_WOOL, BLOCK_PINK_WOOL,
+    BLOCK_TERRACOTTA, BLOCK_WHITE_TERRACOTTA, BLOCK_LIGHT_GRAY_TERRACOTTA, BLOCK_GRAY_TERRACOTTA, BLOCK_BLACK_TERRACOTTA,
+    BLOCK_BROWN_TERRACOTTA, BLOCK_RED_TERRACOTTA, BLOCK_ORANGE_TERRACOTTA, BLOCK_YELLOW_TERRACOTTA, BLOCK_LIME_TERRACOTTA,
+    BLOCK_GREEN_TERRACOTTA, BLOCK_CYAN_TERRACOTTA, BLOCK_LIGHT_BLUE_TERRACOTTA, BLOCK_BLUE_TERRACOTTA,
+    BLOCK_PURPLE_TERRACOTTA, BLOCK_MAGENTA_TERRACOTTA, BLOCK_PINK_TERRACOTTA,
+    BLOCK_WHITE_CONCRETE, BLOCK_LIGHT_GRAY_CONCRETE, BLOCK_GRAY_CONCRETE, BLOCK_BLACK_CONCRETE, BLOCK_BROWN_CONCRETE,
+    BLOCK_RED_CONCRETE, BLOCK_ORANGE_CONCRETE, BLOCK_YELLOW_CONCRETE, BLOCK_LIME_CONCRETE, BLOCK_GREEN_CONCRETE,
+    BLOCK_CYAN_CONCRETE, BLOCK_LIGHT_BLUE_CONCRETE, BLOCK_BLUE_CONCRETE, BLOCK_PURPLE_CONCRETE, BLOCK_MAGENTA_CONCRETE,
+    BLOCK_PINK_CONCRETE,
+    BLOCK_GLASS, BLOCK_WHITE_STAINED_GLASS, BLOCK_LIGHT_GRAY_STAINED_GLASS, BLOCK_GRAY_STAINED_GLASS,
+    BLOCK_BLACK_STAINED_GLASS, BLOCK_BROWN_STAINED_GLASS, BLOCK_RED_STAINED_GLASS, BLOCK_ORANGE_STAINED_GLASS,
+    BLOCK_YELLOW_STAINED_GLASS, BLOCK_LIME_STAINED_GLASS, BLOCK_GREEN_STAINED_GLASS, BLOCK_CYAN_STAINED_GLASS,
+    BLOCK_LIGHT_BLUE_STAINED_GLASS, BLOCK_BLUE_STAINED_GLASS, BLOCK_PURPLE_STAINED_GLASS, BLOCK_MAGENTA_STAINED_GLASS,
+    BLOCK_PINK_STAINED_GLASS
+};
+
+static const BlockType naturalItems[] = {
+    BLOCK_GRASS, BLOCK_DIRT, BLOCK_CLAY, BLOCK_GRAVEL, BLOCK_SAND, BLOCK_SANDSTONE, BLOCK_RED_SAND, BLOCK_RED_SANDSTONE,
+    BLOCK_ICE, BLOCK_PACKED_ICE, BLOCK_BLUE_ICE, BLOCK_SNOW_BLOCK, BLOCK_STONE, BLOCK_GRANITE, BLOCK_DIORITE, BLOCK_ANDESITE,
+    BLOCK_OBSIDIAN, BLOCK_NETHERRACK, BLOCK_SOUL_SAND, BLOCK_MAGMA_BLOCK, BLOCK_BONE_BLOCK, BLOCK_END_STONE,
+    BLOCK_COAL_ORE, BLOCK_IRON_ORE, BLOCK_GOLD_ORE, BLOCK_REDSTONE_ORE, BLOCK_EMERALD_ORE, BLOCK_LAPIS_ORE,
+    BLOCK_DIAMOND_ORE, BLOCK_GLOWSTONE, BLOCK_OAK_LOG, BLOCK_BIRCH_LOG, BLOCK_ACACIA_LOG, BLOCK_DARK_OAK_LOG,
+    BLOCK_OAK_LEAVES, BLOCK_BIRCH_LEAVES, BLOCK_ACACIA_LEAVES, BLOCK_DARK_OAK_LEAVES, BLOCK_CACTUS, BLOCK_MELON,
+    BLOCK_PUMPKIN, BLOCK_JACK_O_LANTERN, BLOCK_HAY_BLOCK, BLOCK_HONEYCOMB_BLOCK, BLOCK_SPONGE, BLOCK_WET_SPONGE,
+    BLOCK_BEDROCK
+};
+
+static const BlockType functionalItems[] = {
+    BLOCK_GLOWSTONE, BLOCK_SEA_LANTERN, BLOCK_CRAFTING_TABLE, BLOCK_FURNACE, BLOCK_CHEST, BLOCK_BOOKSHELF
+};
+
+static const BlockType redstoneItems[] = { BLOCK_REDSTONE_BLOCK };
+
+static const BlockType toolItems[] = { BLOCK_BUCKET, BLOCK_WATER_BUCKET };
+
+// Columns 5 and 6 sit against the right edge. A category with nothing in it
+// is not shown, which hides the tabs for item kinds that do not exist yet.
+static const CreativeTab tabs[TAB_COUNT] = {
+    { "Building Blocks", true, 0, TAB_KIND_CATEGORY, BLOCK_BRICKS, NULL, buildingItems, LIST_COUNT(buildingItems) },
+    { "Colored Blocks", true, 1, TAB_KIND_CATEGORY, BLOCK_CYAN_WOOL, NULL, coloredItems, LIST_COUNT(coloredItems) },
+    { "Natural Blocks", true, 2, TAB_KIND_CATEGORY, BLOCK_GRASS, NULL, naturalItems, LIST_COUNT(naturalItems) },
+    { "Functional Blocks", true, 3, TAB_KIND_CATEGORY, BLOCK_AIR, "sign", functionalItems, LIST_COUNT(functionalItems) },
+    { "Redstone Blocks", true, 4, TAB_KIND_CATEGORY, BLOCK_AIR, "redstone", redstoneItems, LIST_COUNT(redstoneItems) },
+    { "Saved Hotbars", true, 5, TAB_KIND_HOTBAR, BLOCK_BOOKSHELF, NULL, NULL, 0 },
+    { "Search Items", true, 6, TAB_KIND_SEARCH, BLOCK_AIR, "compass_00", NULL, 0 },
+    { "Tools & Utilities", false, 0, TAB_KIND_CATEGORY, BLOCK_AIR, "diamond_pickaxe", toolItems, LIST_COUNT(toolItems) },
+    { "Combat", false, 1, TAB_KIND_CATEGORY, BLOCK_AIR, NULL, NULL, 0 },
+    { "Food & Drinks", false, 2, TAB_KIND_CATEGORY, BLOCK_AIR, NULL, NULL, 0 },
+    { "Ingredients", false, 3, TAB_KIND_CATEGORY, BLOCK_AIR, NULL, NULL, 0 },
+    { "Spawn Eggs", false, 4, TAB_KIND_CATEGORY, BLOCK_AIR, NULL, NULL, 0 },
+    { "Survival Inventory", false, 6, TAB_KIND_INVENTORY, BLOCK_CHEST, NULL, NULL, 0 }
+};
+
+static const Color labelColor = { 64, 64, 64, 255 };
+static const Color tabNameColor = { 85, 85, 255, 255 };
+static const Color cappedCountColor = { 255, 255, 85, 255 };
+
+//----------------------------------------------------------------------------------
+// Module state
+//----------------------------------------------------------------------------------
+static ScreenKind screen = SCREEN_INVENTORY;
+static MenuSlot slots[MENU_SLOT_MAX] = { 0 };
+static int slotCount = 0;
+static int imageWidth = SURVIVAL_WIDTH;
+static int imageHeight = SURVIVAL_HEIGHT;
+static int leftPos = 0;
+static int topPos = 0;
+
+static bool quickCrafting = false;
+static int quickCraftButton = 0;
+static int quickCraftType = 0;
+static int quickCraftSlots[MENU_SLOT_MAX] = { 0 };
+static int quickCraftCount = 0;
+static int quickCraftRemainder = 0;
+static bool skipNextRelease = false;
+static bool doubleClick = false;
+static int lastClickSlot = SLOT_NONE;
+static double lastClickTime = 0.0;
+static int lastClickButton = -1;
+static Stack lastQuickMoved = { BLOCK_AIR, 0 };
+static bool clickedOutside = false;
+
+static PickerEntry picker[PICKER_MAX] = { 0 };
+static int pickerCount = 0;
+static BlockType searchOrder[PICKER_MAX] = { 0 };
+static int searchOrderCount = 0;
+static TextField searchField = { 0 };
+static bool scrolling = false;
+static bool ignoreTextInput = false;
+static Stack savedHotbars[HOTBAR_SIZE][HOTBAR_SIZE] = { 0 };
+
+//----------------------------------------------------------------------------------
+// Stacks and slots
+//----------------------------------------------------------------------------------
+static bool ShiftDown(void)
 {
-    return (int)(sizeof(recipes)/sizeof(recipes[0]));
+    return IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
 }
 
-static void LoadGui(void)
+static bool Creative(const Player *player)
 {
-    if (guiReady) return;
-    guiReady = 1;
-    guiIcons = LoadTexture("resources/textures/gui/icons.png");
-    guiSteve = LoadTexture("resources/textures/entity/steve.png");
-    if (guiIcons.id != 0) SetTextureFilter(guiIcons, TEXTURE_FILTER_POINT);
-    if (guiSteve.id != 0) SetTextureFilter(guiSteve, TEXTURE_FILTER_POINT);
+    return player->gameMode == GAME_MODE_CREATIVE;
 }
 
-static int IsLog(BlockType block)
+static Stack MakeStack(BlockType block, int count)
 {
-    return (block == BLOCK_OAK_LOG) || (block == BLOCK_BIRCH_LOG) ||
-        (block == BLOCK_ACACIA_LOG) || (block == BLOCK_DARK_OAK_LOG);
+    Stack stack = { block, count };
+
+    if ((block <= BLOCK_AIR) || (block >= BLOCK_COUNT) || (count <= 0)) stack = (Stack){ BLOCK_AIR, 0 };
+    return stack;
 }
 
-static int IsPlanks(BlockType block)
+static Stack EmptyStack(void)
 {
-    return (block == BLOCK_OAK_PLANKS) || (block == BLOCK_BIRCH_PLANKS) ||
-        (block == BLOCK_ACACIA_PLANKS) || (block == BLOCK_DARK_OAK_PLANKS);
+    return MakeStack(BLOCK_AIR, 0);
 }
 
-static BlockType PlanksFor(BlockType log)
+static bool IsEmpty(Stack stack)
 {
-    if (log == BLOCK_BIRCH_LOG) return BLOCK_BIRCH_PLANKS;
-    if (log == BLOCK_ACACIA_LOG) return BLOCK_ACACIA_PLANKS;
-    if (log == BLOCK_DARK_OAK_LOG) return BLOCK_DARK_OAK_PLANKS;
-    return BLOCK_OAK_PLANKS;
+    return stack.block == BLOCK_AIR;
 }
 
-static BlockType Cell(const Player *player, int x, int y)
+static int MaxStack(Stack stack)
 {
+    return GuiMaxStack(stack.block);
+}
+
+static Stack Carried(const Player *player)
+{
+    return MakeStack(player->cursorBlock, player->cursorCount);
+}
+
+static void SetCarried(Player *player, Stack stack)
+{
+    stack = MakeStack(stack.block, stack.count);
+    player->cursorBlock = stack.block;
+    player->cursorCount = stack.count;
+}
+
+static bool TabVisible(int tab)
+{
+    return (tabs[tab].kind != TAB_KIND_CATEGORY) || (tabs[tab].itemCount > 0);
+}
+
+static TabKind CurrentTabKind(const Player *player)
+{
+    return tabs[player->creativeTab].kind;
+}
+
+static int PickerRows(void)
+{
+    return (pickerCount + 8)/9 - 5;
+}
+
+static bool CanScroll(const Player *player)
+{
+    return (CurrentTabKind(player) != TAB_KIND_INVENTORY) && (pickerCount > 45);
+}
+
+static PickerEntry PickerAt(const Player *player, int cell)
+{
+    PickerEntry none = { BLOCK_AIR, 0, -1 };
+    int offset = (int)((double)(player->creativeScroll*(float)PickerRows()) + 0.5);
     int index = 0;
 
-    if ((x < 0) || (y < 0) || (x >= player->craftSize) || (y >= player->craftSize)) return BLOCK_AIR;
-    index = y*player->craftSize + x;
-    if (player->craftCount[index] <= 0) return BLOCK_AIR;
-    return player->craft[index];
+    if (offset < 0) offset = 0;
+    index = (cell/9 + offset)*9 + cell%9;
+    if ((index < 0) || (index >= pickerCount)) return none;
+    return picker[index];
 }
 
-static int MatchCraft(const Player *player, BlockType *out, int *outCount)
+static Stack ResultStack(const Player *player)
 {
-    int n = player->craftSize;
-    int minX = n;
-    int minY = n;
-    int maxX = -1;
-    int maxY = -1;
-    int filled = 0;
-    int uniform = 1;
-    BlockType only = BLOCK_AIR;
-    int x = 0;
-    int y = 0;
+    const CraftingRecipe *recipe = CraftingGetRecipe(CraftingFindRecipe(player->craft, player->craftCount, player->craftSize));
 
-    if (n < 2) n = 2;
-    for (y = 0; y < n; y++)
-    {
-        for (x = 0; x < n; x++)
-        {
-            BlockType block = Cell(player, x, y);
-            if (block == BLOCK_AIR) continue;
-            filled++;
-            if (only == BLOCK_AIR) only = block;
-            else if (only != block) uniform = 0;
-            if (x < minX) minX = x;
-            if (y < minY) minY = y;
-            if (x > maxX) maxX = x;
-            if (y > maxY) maxY = y;
-        }
-    }
-    if (filled == 1 && IsLog(only))
-    {
-        *out = PlanksFor(only);
-        *outCount = 4;
-        return 1;
-    }
-    if (filled == 4 && uniform && (maxX - minX == 1) && (maxY - minY == 1))
-    {
-        if (IsPlanks(only))
-        {
-            *out = BLOCK_CRAFTING_TABLE;
-            *outCount = 1;
-            return 1;
-        }
-        if (only == BLOCK_SAND)
-        {
-            *out = BLOCK_SANDSTONE;
-            *outCount = 1;
-            return 1;
-        }
-        if (only == BLOCK_RED_SAND)
-        {
-            *out = BLOCK_RED_SANDSTONE;
-            *outCount = 1;
-            return 1;
-        }
-        if (only == BLOCK_COBBLESTONE)
-        {
-            *out = BLOCK_STONE_BRICKS;
-            *outCount = 1;
-            return 1;
-        }
-    }
-    if ((n == 3) && (filled == 8) && uniform && (Cell(player, 1, 1) == BLOCK_AIR))
-    {
-        if (only == BLOCK_COBBLESTONE)
-        {
-            *out = BLOCK_FURNACE;
-            *outCount = 1;
-            return 1;
-        }
-        if (IsPlanks(only))
-        {
-            *out = BLOCK_CHEST;
-            *outCount = 1;
-            return 1;
-        }
-    }
-    *out = BLOCK_AIR;
-    *outCount = 0;
-    return 0;
+    if (recipe == NULL) return EmptyStack();
+    return MakeStack(recipe->result, recipe->count);
 }
 
-static void ClickStack(BlockType *block, int *count, Player *player)
+static Stack GetSlot(const Player *player, const MenuSlot *slot)
 {
-    BlockType held = player->cursorBlock;
-    int heldCount = player->cursorCount;
+    switch (slot->kind)
+    {
+        case SLOT_RESULT: return ResultStack(player);
+        case SLOT_CRAFT: return MakeStack(player->craft[slot->index], player->craftCount[slot->index]);
+        case SLOT_STORAGE: return MakeStack(player->inventory.blocks[slot->index], player->inventory.quantities[slot->index]);
+        case SLOT_HOTBAR: return MakeStack(player->hotbar[slot->index], player->hotbarCount[slot->index]);
+        case SLOT_OFFHAND: return MakeStack(player->offhand, player->offhandCount);
+        case SLOT_PICKER:
+        {
+            PickerEntry entry = PickerAt(player, slot->index);
 
-    if ((held == BLOCK_AIR) || (heldCount <= 0))
-    {
-        player->cursorBlock = *block;
-        player->cursorCount = *count;
-        *block = BLOCK_AIR;
-        *count = 0;
-        return;
+            return MakeStack(entry.block, entry.count);
+        }
+        default: return EmptyStack();
     }
-    if ((*block == BLOCK_AIR) || (*count <= 0))
-    {
-        *block = held;
-        *count = heldCount;
-        player->cursorBlock = BLOCK_AIR;
-        player->cursorCount = 0;
-        return;
-    }
-    if (*block == held)
-    {
-        *count += heldCount;
-        player->cursorBlock = BLOCK_AIR;
-        player->cursorCount = 0;
-        return;
-    }
-    player->cursorBlock = *block;
-    player->cursorCount = *count;
-    *block = held;
-    *count = heldCount;
 }
 
-static void StowCursor(Player *player)
+static void SetSlot(Player *player, const MenuSlot *slot, Stack stack)
+{
+    stack = MakeStack(stack.block, stack.count);
+    switch (slot->kind)
+    {
+        case SLOT_CRAFT:
+        {
+            player->craft[slot->index] = stack.block;
+            player->craftCount[slot->index] = stack.count;
+        } break;
+        case SLOT_STORAGE:
+        {
+            player->inventory.blocks[slot->index] = stack.block;
+            player->inventory.quantities[slot->index] = stack.count;
+        } break;
+        case SLOT_HOTBAR:
+        {
+            player->hotbar[slot->index] = stack.block;
+            player->hotbarCount[slot->index] = stack.count;
+        } break;
+        case SLOT_OFFHAND:
+        {
+            player->offhand = stack.block;
+            player->offhandCount = stack.count;
+        } break;
+        default: break;
+    }
+}
+
+// Armor slots only take armor, and there is no armor yet.
+static bool SlotMayPlace(const MenuSlot *slot, Stack stack)
+{
+    if (IsEmpty(stack)) return false;
+    return (slot->kind == SLOT_CRAFT) || (slot->kind == SLOT_STORAGE) || (slot->kind == SLOT_HOTBAR) || (slot->kind == SLOT_OFFHAND);
+}
+
+static bool SlotMayPickup(const MenuSlot *slot)
+{
+    return (slot->kind != SLOT_PICKER) && (slot->kind != SLOT_DESTROY);
+}
+
+static bool CanDragTo(const MenuSlot *slot)
+{
+    return (slot->kind != SLOT_RESULT) && (slot->kind != SLOT_PICKER) && (slot->kind != SLOT_DESTROY);
+}
+
+static bool CanPickAllFrom(const MenuSlot *slot)
+{
+    return (slot->kind != SLOT_RESULT) && (slot->kind != SLOT_PICKER) && (slot->kind != SLOT_DESTROY);
+}
+
+// Slots that belong to one container: the player's own slots, the grid, the result.
+static int SlotContainer(const MenuSlot *slot)
+{
+    switch (slot->kind)
+    {
+        case SLOT_ARMOR:
+        case SLOT_STORAGE:
+        case SLOT_HOTBAR:
+        case SLOT_OFFHAND: return 0;
+        case SLOT_CRAFT: return 1;
+        case SLOT_RESULT: return 2;
+        default: return 3;
+    }
+}
+
+static bool CanQuickReplace(Stack there, Stack stack)
+{
+    return IsEmpty(there) || (there.block == stack.block);
+}
+
+static Stack InventoryStack(const Player *player, int button)
+{
+    if (button == OFFHAND_BUTTON) return MakeStack(player->offhand, player->offhandCount);
+    return MakeStack(player->hotbar[button], player->hotbarCount[button]);
+}
+
+static void SetInventoryStack(Player *player, int button, Stack stack)
+{
+    stack = MakeStack(stack.block, stack.count);
+    if (button == OFFHAND_BUTTON)
+    {
+        player->offhand = stack.block;
+        player->offhandCount = stack.count;
+        return;
+    }
+    player->hotbar[button] = stack.block;
+    player->hotbarCount[button] = stack.count;
+}
+
+static void ConsumeCraft(Player *player)
+{
+    CraftingConsume(player->craft, player->craftCount, player->craftSize);
+}
+
+//----------------------------------------------------------------------------------
+// Layout
+//----------------------------------------------------------------------------------
+static void AddSlot(SlotKind kind, int index, int x, int y)
+{
+    if (slotCount >= MENU_SLOT_MAX) return;
+    slots[slotCount] = (MenuSlot){ kind, index, x, y };
+    slotCount++;
+}
+
+static void AddPlayerRows(int x, int storageY, int hotbarY)
+{
+    for (int row = 0; row < 3; row++)
+    {
+        for (int col = 0; col < 9; col++) AddSlot(SLOT_STORAGE, row*9 + col, x + 18*col, storageY + 18*row);
+    }
+    for (int col = 0; col < 9; col++) AddSlot(SLOT_HOTBAR, col, x + 18*col, hotbarY);
+}
+
+static void BuildMenu(const Player *player)
+{
+    slotCount = 0;
+    imageWidth = (screen == SCREEN_CREATIVE)? CREATIVE_WIDTH : SURVIVAL_WIDTH;
+    imageHeight = (screen == SCREEN_CREATIVE)? CREATIVE_HEIGHT : SURVIVAL_HEIGHT;
+    leftPos = (GuiWidth() - imageWidth)/2;
+    topPos = (GuiHeight() - imageHeight)/2;
+
+    if (screen == SCREEN_INVENTORY)
+    {
+        AddSlot(SLOT_RESULT, 0, 154, 28);
+        for (int row = 0; row < 2; row++)
+        {
+            for (int col = 0; col < 2; col++) AddSlot(SLOT_CRAFT, row*2 + col, 98 + 18*col, 18 + 18*row);
+        }
+        for (int i = 0; i < 4; i++) AddSlot(SLOT_ARMOR, i, 8, 8 + 18*i);
+        AddPlayerRows(8, 84, 142);
+        AddSlot(SLOT_OFFHAND, 0, 77, 62);
+    }
+    else if (screen == SCREEN_CRAFTING)
+    {
+        AddSlot(SLOT_RESULT, 0, 124, 35);
+        for (int row = 0; row < 3; row++)
+        {
+            for (int col = 0; col < 3; col++) AddSlot(SLOT_CRAFT, row*3 + col, 30 + 18*col, 17 + 18*row);
+        }
+        AddPlayerRows(8, 84, 142);
+    }
+    else if (CurrentTabKind(player) == TAB_KIND_INVENTORY)
+    {
+        AddSlot(SLOT_ARMOR, 0, 54, 6);
+        AddSlot(SLOT_ARMOR, 1, 54, 33);
+        AddSlot(SLOT_ARMOR, 2, 108, 6);
+        AddSlot(SLOT_ARMOR, 3, 108, 33);
+        AddPlayerRows(9, 54, 112);
+        AddSlot(SLOT_OFFHAND, 0, 35, 20);
+        AddSlot(SLOT_DESTROY, 0, 173, 112);
+    }
+    else
+    {
+        for (int cell = 0; cell < 45; cell++) AddSlot(SLOT_PICKER, cell, 9 + 18*(cell%9), 18 + 18*(cell/9));
+        for (int col = 0; col < 9; col++) AddSlot(SLOT_HOTBAR, col, 9 + 18*col, 112);
+    }
+}
+
+static bool SlotHovered(int index, int mx, int my)
+{
+    int x = leftPos + slots[index].x;
+    int y = topPos + slots[index].y;
+
+    return (mx >= x - 1) && (mx < x + 17) && (my >= y - 1) && (my < y + 17);
+}
+
+static int SlotAt(int mx, int my)
+{
+    for (int i = 0; i < slotCount; i++)
+    {
+        if (SlotHovered(i, mx, my)) return i;
+    }
+    return SLOT_NONE;
+}
+
+static int TabX(int tab)
+{
+    if (tabs[tab].column >= 5) return CREATIVE_WIDTH - 27*(7 - tabs[tab].column) + 1;
+    return 27*tabs[tab].column;
+}
+
+static int TabY(int tab)
+{
+    return tabs[tab].top? -32 : CREATIVE_HEIGHT;
+}
+
+static bool TabClicked(int tab, int mx, int my)
+{
+    int x = mx - leftPos;
+    int y = my - topPos;
+
+    return (x >= TabX(tab)) && (x <= TabX(tab) + 26) && (y >= TabY(tab)) && (y <= TabY(tab) + 32);
+}
+
+static bool TabHovered(int tab, int mx, int my)
+{
+    int x = mx - leftPos;
+    int y = my - topPos;
+
+    return (x >= TabX(tab) + 2) && (x < TabX(tab) + 25) && (y >= TabY(tab) + 2) && (y < TabY(tab) + 31);
+}
+
+static bool ClickedOutside(const Player *player, int mx, int my)
+{
+    bool outside = (mx < leftPos) || (my < topPos) || (mx >= leftPos + imageWidth) || (my >= topPos + imageHeight);
+
+    if (screen == SCREEN_CREATIVE) outside = outside && !TabClicked(player->creativeTab, mx, my);
+    return outside;
+}
+
+static bool InsideScrollbar(int mx, int my)
+{
+    return (mx >= leftPos + 175) && (my >= topPos + 18) && (mx < leftPos + 189) && (my < topPos + 130);
+}
+
+//----------------------------------------------------------------------------------
+// Creative tabs and search
+//----------------------------------------------------------------------------------
+static bool TabContains(int tab, BlockType block)
+{
+    for (int i = 0; i < tabs[tab].itemCount; i++)
+    {
+        if (tabs[tab].items[i] == block) return true;
+    }
+    return false;
+}
+
+static void BuildSearchOrder(void)
+{
+    if (searchOrderCount > 0) return;
+    for (int tab = 0; tab < TAB_COUNT; tab++)
+    {
+        if (tabs[tab].kind != TAB_KIND_CATEGORY) continue;
+        for (int i = 0; i < tabs[tab].itemCount; i++)
+        {
+            BlockType block = tabs[tab].items[i];
+            bool seen = false;
+
+            for (int k = 0; (k < searchOrderCount) && !seen; k++) seen = (searchOrder[k] == block);
+            if (!seen && (searchOrderCount < PICKER_MAX)) searchOrder[searchOrderCount++] = block;
+        }
+    }
+}
+
+static void LowerCopy(const char *text, char *out, int size)
 {
     int i = 0;
 
-    if ((player->cursorBlock == BLOCK_AIR) || (player->cursorCount <= 0))
+    for (i = 0; (text[i] != '\0') && (i < size - 1); i++) out[i] = (char)tolower((unsigned char)text[i]);
+    out[i] = '\0';
+}
+
+static void TrimCopy(const char *start, const char *end, char *out, int size)
+{
+    int length = 0;
+
+    while ((start < end) && (*start == ' ')) start++;
+    while ((end > start) && (end[-1] == ' ')) end--;
+    length = (int)(end - start);
+    if (length > size - 1) length = size - 1;
+    memcpy(out, start, (size_t)length);
+    out[length] = '\0';
+}
+
+// A query with a colon matches the id's namespace and path separately.
+// Otherwise it may appear anywhere in the name or the id.
+static bool ItemMatches(BlockType block, const char *query)
+{
+    char name[64] = { 0 };
+    const char *id = GetBlockId(block);
+    const char *colon = strchr(query, ':');
+
+    if (colon != NULL)
     {
-        player->cursorBlock = BLOCK_AIR;
-        player->cursorCount = 0;
+        char space[TEXT_FIELD_CAPACITY] = { 0 };
+        char path[TEXT_FIELD_CAPACITY] = { 0 };
+
+        TrimCopy(query, colon, space, (int)sizeof(space));
+        TrimCopy(colon + 1, query + strlen(query), path, (int)sizeof(path));
+        return (strstr("minecraft", space) != NULL) && (strstr(id, path) != NULL);
+    }
+    LowerCopy(GetBlockName(block), name, (int)sizeof(name));
+    return (strstr(name, query) != NULL) || (strstr(id, query) != NULL);
+}
+
+static void AddPicker(BlockType block, int count, int lockedRow)
+{
+    if (pickerCount >= PICKER_MAX) return;
+    picker[pickerCount] = (PickerEntry){ block, count, lockedRow };
+    pickerCount++;
+}
+
+static void RefreshSearch(Player *player)
+{
+    char query[TEXT_FIELD_CAPACITY] = { 0 };
+
+    LowerCopy(searchField.value, query, (int)sizeof(query));
+    BuildSearchOrder();
+    pickerCount = 0;
+    if (query[0] != '#')
+    {
+        for (int i = 0; i < searchOrderCount; i++)
+        {
+            if ((query[0] == '\0') || ItemMatches(searchOrder[i], query)) AddPicker(searchOrder[i], 1, -1);
+        }
+    }
+    player->creativeScroll = 0.0f;
+}
+
+static bool HotbarRowEmpty(int row)
+{
+    for (int col = 0; col < HOTBAR_SIZE; col++)
+    {
+        if (!IsEmpty(savedHotbars[row][col])) return false;
+    }
+    return true;
+}
+
+static void SelectTab(Player *player, int tab, bool reopening)
+{
+    int previous = reopening? -1 : player->creativeTab;
+
+    player->creativeTab = tab;
+    quickCrafting = false;
+    quickCraftCount = 0;
+    lastClickSlot = SLOT_NONE;
+    pickerCount = 0;
+    if (tabs[tab].kind == TAB_KIND_HOTBAR)
+    {
+        for (int row = 0; row < HOTBAR_SIZE; row++)
+        {
+            bool empty = HotbarRowEmpty(row);
+
+            for (int col = 0; col < HOTBAR_SIZE; col++)
+            {
+                if (empty) AddPicker(BLOCK_AIR, 0, (col == row)? row : -1);
+                else AddPicker(savedHotbars[row][col].block, savedHotbars[row][col].count, -1);
+            }
+        }
+    }
+    else if (tabs[tab].kind == TAB_KIND_CATEGORY)
+    {
+        for (int i = 0; i < tabs[tab].itemCount; i++) AddPicker(tabs[tab].items[i], 1, -1);
+    }
+    if (tabs[tab].kind == TAB_KIND_SEARCH)
+    {
+        TextFieldSetFocus(&searchField, true);
+        if (previous != tab) TextFieldSetValue(&searchField, "");
+        RefreshSearch(player);
+    }
+    else
+    {
+        TextFieldSetFocus(&searchField, false);
+        TextFieldSetValue(&searchField, "");
+    }
+    player->creativeScroll = 0.0f;
+    player->searchFocused = searchField.focused? 1 : 0;
+    BuildMenu(player);
+}
+
+//----------------------------------------------------------------------------------
+// Clicks
+//----------------------------------------------------------------------------------
+static void ClickPickup(Player *player, int index, int button)
+{
+    const MenuSlot *slot = &slots[index];
+    Stack carried = Carried(player);
+    Stack item = GetSlot(player, slot);
+    bool primary = (button == 0);
+
+    // The output always comes out whole: into an empty hand, or onto the
+    // same item when all of it fits.
+    if (slot->kind == SLOT_RESULT)
+    {
+        if (IsEmpty(item)) return;
+        if (IsEmpty(carried))
+        {
+            SetCarried(player, item);
+            ConsumeCraft(player);
+        }
+        else if ((carried.block == item.block) && (carried.count + item.count <= MaxStack(carried)))
+        {
+            carried.count += item.count;
+            SetCarried(player, carried);
+            ConsumeCraft(player);
+        }
         return;
     }
-    for (i = 0; i < INVENTORY_SIZE; i++)
+    if (IsEmpty(item))
     {
-        if (player->inventory.blocks[i] == player->cursorBlock)
+        if (!IsEmpty(carried) && SlotMayPlace(slot, carried))
         {
-            player->inventory.quantities[i] += player->cursorCount;
-            player->cursorBlock = BLOCK_AIR;
-            player->cursorCount = 0;
-            return;
+            int amount = primary? carried.count : 1;
+
+            if (amount > MaxStack(carried)) amount = MaxStack(carried);
+            SetSlot(player, slot, MakeStack(carried.block, amount));
+            carried.count -= amount;
+            SetCarried(player, carried);
         }
+        return;
     }
-    for (i = 0; i < INVENTORY_SIZE; i++)
+    if (!SlotMayPickup(slot)) return;
+    if (IsEmpty(carried))
     {
-        if ((player->inventory.blocks[i] == BLOCK_AIR) || (player->inventory.quantities[i] <= 0))
-        {
-            player->inventory.blocks[i] = player->cursorBlock;
-            player->inventory.quantities[i] = player->cursorCount;
-            player->cursorBlock = BLOCK_AIR;
-            player->cursorCount = 0;
-            return;
-        }
+        int amount = primary? item.count : (item.count + 1)/2;
+
+        SetCarried(player, MakeStack(item.block, amount));
+        item.count -= amount;
+        SetSlot(player, slot, item);
+        return;
+    }
+    if (!SlotMayPlace(slot, carried)) return;
+    if (carried.block == item.block)
+    {
+        int amount = primary? carried.count : 1;
+        int room = MaxStack(item) - item.count;
+
+        if (amount > room) amount = room;
+        if (amount <= 0) return;
+        item.count += amount;
+        carried.count -= amount;
+        SetSlot(player, slot, item);
+        SetCarried(player, carried);
+    }
+    else if (carried.count <= MaxStack(carried))
+    {
+        SetSlot(player, slot, carried);
+        SetCarried(player, item);
     }
 }
 
-void InventoryClose(Player *player)
+static int AppendKind(int *out, int count, SlotKind kind, bool reverse)
 {
-    StowCursor(player);
-    player->inventoryOpen = false;
-    DisableCursor();
+    for (int k = 0; k < slotCount; k++)
+    {
+        int i = reverse? slotCount - 1 - k : k;
+
+        if (slots[i].kind == kind) out[count++] = i;
+    }
+    return count;
 }
 
-static void FillRecipe(Player *player, int index)
+// First tops up stacks of the same item in target order, then puts what is
+// left into the first empty slot that takes it.
+static bool MoveStackTo(Player *player, Stack *stack, const int *targets, int targetCount)
 {
-    const CraftRecipe *recipe = NULL;
-    int i = 0;
-    int n = 0;
+    bool moved = false;
 
-    if ((index < 0) || (index >= RecipeCount())) return;
-    recipe = &recipes[index];
-    if (recipe->width > player->craftSize) return;
-    n = player->craftSize*player->craftSize;
-    for (i = 0; i < 9; i++)
+    for (int i = 0; (i < targetCount) && !IsEmpty(*stack); i++)
+    {
+        const MenuSlot *slot = &slots[targets[i]];
+        Stack there = GetSlot(player, slot);
+        int room = MaxStack(*stack) - there.count;
+
+        if ((there.block != stack->block) || (room <= 0)) continue;
+        if (room > stack->count) room = stack->count;
+        there.count += room;
+        SetSlot(player, slot, there);
+        *stack = MakeStack(stack->block, stack->count - room);
+        moved = true;
+    }
+    for (int i = 0; (i < targetCount) && !IsEmpty(*stack); i++)
+    {
+        const MenuSlot *slot = &slots[targets[i]];
+
+        if (!IsEmpty(GetSlot(player, slot)) || !SlotMayPlace(slot, *stack)) continue;
+        SetSlot(player, slot, *stack);
+        *stack = EmptyStack();
+        moved = true;
+    }
+    return moved;
+}
+
+static int RoomFor(const Player *player, Stack stack, const int *targets, int targetCount)
+{
+    int room = 0;
+    bool emptySlot = false;
+
+    for (int i = 0; i < targetCount; i++)
+    {
+        Stack there = GetSlot(player, &slots[targets[i]]);
+
+        if (IsEmpty(there)) emptySlot = true;
+        else if (there.block == stack.block) room += MaxStack(stack) - there.count;
+    }
+    return room + (emptySlot? MaxStack(stack) : 0);
+}
+
+// One shift-click step. Returns false once nothing more moves.
+static bool QuickMoveOnce(Player *player, int index)
+{
+    const MenuSlot *slot = &slots[index];
+    Stack item = GetSlot(player, slot);
+    int before = item.count;
+    int targets[MENU_SLOT_MAX] = { 0 };
+    int count = 0;
+
+    if (IsEmpty(item)) return false;
+    if (slot->kind == SLOT_RESULT)
+    {
+        // Crafted items fill the hotbar from the right first. Nothing is
+        // crafted unless the whole output fits, since there is nowhere to drop the rest.
+        count = AppendKind(targets, count, SLOT_HOTBAR, true);
+        count = AppendKind(targets, count, SLOT_STORAGE, true);
+        if (RoomFor(player, item, targets, count) < item.count) return false;
+        if (!MoveStackTo(player, &item, targets, count)) return false;
+        ConsumeCraft(player);
+        return true;
+    }
+    if ((screen == SCREEN_CRAFTING) && ((slot->kind == SLOT_STORAGE) || (slot->kind == SLOT_HOTBAR)))
+    {
+        count = AppendKind(targets, 0, SLOT_CRAFT, false);
+        if (!MoveStackTo(player, &item, targets, count))
+        {
+            count = AppendKind(targets, 0, (slot->kind == SLOT_STORAGE)? SLOT_HOTBAR : SLOT_STORAGE, false);
+            MoveStackTo(player, &item, targets, count);
+        }
+    }
+    else if (slot->kind == SLOT_STORAGE)
+    {
+        count = AppendKind(targets, 0, SLOT_HOTBAR, false);
+        MoveStackTo(player, &item, targets, count);
+    }
+    else if (slot->kind == SLOT_HOTBAR)
+    {
+        count = AppendKind(targets, 0, SLOT_STORAGE, false);
+        MoveStackTo(player, &item, targets, count);
+    }
+    else
+    {
+        count = AppendKind(targets, 0, SLOT_STORAGE, false);
+        count = AppendKind(targets, count, SLOT_HOTBAR, false);
+        MoveStackTo(player, &item, targets, count);
+    }
+    SetSlot(player, slot, item);
+    return item.count != before;
+}
+
+static void QuickMove(Player *player, int index)
+{
+    BlockType block = GetSlot(player, &slots[index]).block;
+
+    for (int step = 0; step < 4*INVENTORY_SIZE; step++)
+    {
+        if (!QuickMoveOnce(player, index)) break;
+        if (GetSlot(player, &slots[index]).block != block) break;
+    }
+}
+
+static void ClickSwap(Player *player, int index, int button)
+{
+    const MenuSlot *slot = &slots[index];
+    Stack other = InventoryStack(player, button);
+    Stack item = GetSlot(player, slot);
+
+    if (IsEmpty(other) && IsEmpty(item)) return;
+    if (IsEmpty(other))
+    {
+        if (!SlotMayPickup(slot)) return;
+        SetInventoryStack(player, button, item);
+        if (slot->kind == SLOT_RESULT) ConsumeCraft(player);
+        else SetSlot(player, slot, EmptyStack());
+        return;
+    }
+    if (!SlotMayPlace(slot, other)) return;
+    if (IsEmpty(item))
+    {
+        SetInventoryStack(player, button, EmptyStack());
+        SetSlot(player, slot, other);
+        return;
+    }
+    SetInventoryStack(player, button, item);
+    SetSlot(player, slot, other);
+}
+
+static void ClickClone(Player *player, int index)
+{
+    Stack item = GetSlot(player, &slots[index]);
+
+    if (!Creative(player) || !IsEmpty(Carried(player)) || IsEmpty(item)) return;
+    SetCarried(player, MakeStack(item.block, MaxStack(item)));
+}
+
+// A double-click with something in hand pulls in the same item from every
+// slot, partial stacks first.
+static void ClickPickupAll(Player *player, int index, int button)
+{
+    Stack carried = Carried(player);
+    Stack clicked = GetSlot(player, &slots[index]);
+    int max = MaxStack(carried);
+
+    if (IsEmpty(carried) || (!IsEmpty(clicked) && SlotMayPickup(&slots[index]))) return;
+    for (int pass = 0; pass < 2; pass++)
+    {
+        for (int k = 0; (k < slotCount) && (carried.count < max); k++)
+        {
+            int i = (button == 0)? k : slotCount - 1 - k;
+            Stack there = GetSlot(player, &slots[i]);
+            int take = 0;
+
+            if ((there.block != carried.block) || !CanPickAllFrom(&slots[i])) continue;
+            if ((pass == 0) && (there.count == MaxStack(there))) continue;
+            take = there.count;
+            if (take > max - carried.count) take = max - carried.count;
+            there.count -= take;
+            carried.count += take;
+            SetSlot(player, &slots[i], there);
+        }
+    }
+    SetCarried(player, carried);
+}
+
+static void MenuClicked(Player *player, int target, int button, ClickType type)
+{
+    if (target < 0) return;
+    switch (type)
+    {
+        case CLICK_PICKUP: ClickPickup(player, target, button); break;
+        case CLICK_QUICK_MOVE: QuickMove(player, target); break;
+        case CLICK_SWAP: ClickSwap(player, target, button); break;
+        case CLICK_CLONE: ClickClone(player, target); break;
+        case CLICK_PICKUP_ALL: ClickPickupAll(player, target, button); break;
+        default: break;
+    }
+}
+
+static void ClearInventory(Player *player)
+{
+    for (int i = 0; i < HOTBAR_SIZE; i++) SetInventoryStack(player, i, EmptyStack());
+    for (int i = 0; i < INVENTORY_SIZE; i++)
+    {
+        player->inventory.blocks[i] = BLOCK_AIR;
+        player->inventory.quantities[i] = 0;
+    }
+    for (int i = 0; i < 9; i++)
     {
         player->craft[i] = BLOCK_AIR;
         player->craftCount[i] = 0;
     }
-    if (recipe->kind == 1)
+    SetInventoryStack(player, OFFHAND_BUTTON, EmptyStack());
+}
+
+// Picker cells hand out copies: one item, a full stack with Shift, and a
+// click with another item in hand throws that item away.
+static void PickerClicked(Player *player, const MenuSlot *slot, int button, ClickType type)
+{
+    Stack carried = Carried(player);
+    Stack item = GetSlot(player, slot);
+    bool quick = (type == CLICK_QUICK_MOVE);
+
+    if (type == CLICK_SWAP)
     {
-        player->craft[0] = recipe->item;
-        player->craftCount[0] = 1;
+        if (!IsEmpty(item)) SetInventoryStack(player, button, MakeStack(item.block, MaxStack(item)));
+        return;
     }
-    else if (recipe->kind == 4)
+    if (type == CLICK_CLONE)
     {
-        for (i = 0; i < n; i++)
+        if (IsEmpty(carried) && !IsEmpty(item)) SetCarried(player, MakeStack(item.block, MaxStack(item)));
+        return;
+    }
+    if (type == CLICK_THROW) return;
+    if (!IsEmpty(carried) && !IsEmpty(item) && (carried.block == item.block))
+    {
+        if (button == 0)
         {
-            int x = i%player->craftSize;
-            int y = i/player->craftSize;
-            if ((x < 2) && (y < 2))
+            if (quick) carried.count = MaxStack(carried);
+            else if (carried.count < MaxStack(carried)) carried.count++;
+        }
+        else carried.count--;
+    }
+    else if (!IsEmpty(item) && IsEmpty(carried))
+    {
+        carried = item;
+        if (quick) carried.count = MaxStack(carried);
+    }
+    else if (button == 0) carried = EmptyStack();
+    else carried.count--;
+    SetCarried(player, carried);
+}
+
+static void CreativeClicked(Player *player, int target, int button, ClickType type)
+{
+    TabKind kind = CurrentTabKind(player);
+    const MenuSlot *slot = (target >= 0)? &slots[target] : NULL;
+    Stack carried = Carried(player);
+
+    if ((target == SLOT_OUTSIDE) && (type == CLICK_PICKUP)) type = CLICK_THROW;
+    if ((slot == NULL) && (kind != TAB_KIND_INVENTORY))
+    {
+        if (!IsEmpty(carried) && clickedOutside)
+        {
+            if (button == 0) SetCarried(player, EmptyStack());
+            else if (button == 1) SetCarried(player, MakeStack(carried.block, carried.count - 1));
+        }
+        return;
+    }
+    if ((slot != NULL) && (slot->kind == SLOT_PICKER) && (PickerAt(player, slot->index).lockedRow >= 0)) return;
+    if ((slot != NULL) && (slot->kind == SLOT_DESTROY) && (type == CLICK_QUICK_MOVE))
+    {
+        ClearInventory(player);
+        return;
+    }
+    if (kind == TAB_KIND_INVENTORY)
+    {
+        if ((slot != NULL) && (slot->kind == SLOT_DESTROY)) SetCarried(player, EmptyStack());
+        else if ((type == CLICK_THROW) && (slot != NULL) && !IsEmpty(GetSlot(player, slot)))
+        {
+            Stack item = GetSlot(player, slot);
+
+            SetSlot(player, slot, MakeStack(item.block, (button == 0)? item.count - 1 : 0));
+        }
+        else if (type == CLICK_THROW) SetCarried(player, EmptyStack());
+        else MenuClicked(player, target, button, type);
+        return;
+    }
+    if (slot->kind == SLOT_PICKER)
+    {
+        PickerClicked(player, slot, button, type);
+        return;
+    }
+    // Shift-clicking the hotbar under the item grid clears that slot.
+    if (type == CLICK_QUICK_MOVE)
+    {
+        SetSlot(player, slot, EmptyStack());
+        return;
+    }
+    MenuClicked(player, target, button, type);
+}
+
+static void SlotClicked(Player *player, int target, int button, ClickType type)
+{
+    if (screen == SCREEN_CREATIVE) CreativeClicked(player, target, button, type);
+    else if ((target == SLOT_OUTSIDE) && Creative(player)) SetCarried(player, EmptyStack());
+    else MenuClicked(player, target, button, type);
+}
+
+//----------------------------------------------------------------------------------
+// Dragging a stack across slots
+//----------------------------------------------------------------------------------
+static bool InQuickCraft(int index)
+{
+    for (int i = 0; i < quickCraftCount; i++)
+    {
+        if (quickCraftSlots[i] == index) return true;
+    }
+    return false;
+}
+
+// What a dragged-over slot ends up holding before the stack size cap.
+static int QuickCraftTarget(Stack carried, int existing)
+{
+    int share = MaxStack(carried);
+
+    if (quickCraftType == 0) share = carried.count/quickCraftCount;
+    else if (quickCraftType == 1) share = 1;
+    return share + existing;
+}
+
+static void RecalculateQuickCraft(const Player *player)
+{
+    Stack carried = Carried(player);
+
+    quickCraftRemainder = carried.count;
+    if (IsEmpty(carried)) return;
+    for (int i = 0; i < quickCraftCount; i++)
+    {
+        Stack there = GetSlot(player, &slots[quickCraftSlots[i]]);
+        int target = QuickCraftTarget(carried, there.count);
+
+        if (target > MaxStack(carried)) target = MaxStack(carried);
+        quickCraftRemainder -= target - there.count;
+    }
+}
+
+static void FinishQuickCraft(Player *player)
+{
+    Stack carried = Carried(player);
+    int remaining = carried.count;
+
+    if (quickCraftCount == 1)
+    {
+        int index = quickCraftSlots[0];
+
+        quickCraftCount = 0;
+        SlotClicked(player, index, (quickCraftType == 0)? 0 : 1, CLICK_PICKUP);
+        return;
+    }
+    for (int i = 0; i < quickCraftCount; i++)
+    {
+        const MenuSlot *slot = &slots[quickCraftSlots[i]];
+        Stack there = GetSlot(player, slot);
+        int target = 0;
+
+        if (!CanQuickReplace(there, carried) || !SlotMayPlace(slot, carried) || !CanDragTo(slot)) continue;
+        if ((quickCraftType != 2) && (carried.count < quickCraftCount)) continue;
+        target = QuickCraftTarget(carried, there.count);
+        if (target > MaxStack(carried)) target = MaxStack(carried);
+        remaining -= target - there.count;
+        SetSlot(player, slot, MakeStack(carried.block, target));
+    }
+    SetCarried(player, MakeStack(carried.block, remaining));
+    quickCraftCount = 0;
+}
+
+//----------------------------------------------------------------------------------
+// Mouse and keys
+//----------------------------------------------------------------------------------
+static void ResetMouseState(void)
+{
+    quickCrafting = false;
+    quickCraftCount = 0;
+    quickCraftRemainder = 0;
+    skipNextRelease = false;
+    doubleClick = false;
+    lastClickSlot = SLOT_NONE;
+    lastClickTime = 0.0;
+    lastClickButton = -1;
+    lastQuickMoved = EmptyStack();
+    clickedOutside = false;
+    scrolling = false;
+    ignoreTextInput = false;
+}
+
+static void ScrollTo(Player *player, float position)
+{
+    if (position < 0.0f) position = 0.0f;
+    if (position > 1.0f) position = 1.0f;
+    player->creativeScroll = position;
+}
+
+// Tabs, the scroller, and the search field take a press before the slots do.
+static bool CreativePressed(Player *player, int mx, int my, int button)
+{
+    if (button == 0)
+    {
+        for (int tab = 0; tab < TAB_COUNT; tab++)
+        {
+            if (TabVisible(tab) && TabClicked(tab, mx, my)) return true;
+        }
+        if ((CurrentTabKind(player) != TAB_KIND_INVENTORY) && InsideScrollbar(mx, my))
+        {
+            scrolling = CanScroll(player);
+            return true;
+        }
+    }
+    if (CurrentTabKind(player) == TAB_KIND_SEARCH)
+    {
+        if (TextFieldMouseClicked(&searchField, leftPos + 82, topPos + 6, 9, mx, my, button, false)) return true;
+    }
+    return false;
+}
+
+static void MousePressed(Player *player, int mx, int my, int button)
+{
+    int slot = SlotAt(mx, my);
+    double now = GetTime();
+    bool clone = (button == 2) && Creative(player);
+    int target = SLOT_NONE;
+
+    if ((screen == SCREEN_CREATIVE) && CreativePressed(player, mx, my, button)) return;
+    doubleClick = (lastClickSlot == slot) && (now - lastClickTime < DOUBLE_CLICK_SECONDS) && (lastClickButton == button);
+    skipNextRelease = false;
+    clickedOutside = ClickedOutside(player, mx, my);
+    target = clickedOutside? SLOT_OUTSIDE : slot;
+    if (((button == 0) || (button == 1) || clone) && (target != SLOT_NONE) && !quickCrafting)
+    {
+        if (IsEmpty(Carried(player)))
+        {
+            if (clone) SlotClicked(player, target, button, CLICK_CLONE);
+            else if ((target != SLOT_OUTSIDE) && ShiftDown())
             {
-                player->craft[i] = recipe->item;
-                player->craftCount[i] = 1;
+                // The second press of a Shift double-click lands on the slot the
+                // first press just emptied, so it keeps the item that moved.
+                Stack item = GetSlot(player, &slots[slot]);
+
+                if (!IsEmpty(item) || !doubleClick) lastQuickMoved = item;
+                SlotClicked(player, target, button, CLICK_QUICK_MOVE);
+            }
+            else SlotClicked(player, target, button, (target == SLOT_OUTSIDE)? CLICK_THROW : CLICK_PICKUP);
+            skipNextRelease = true;
+        }
+        else
+        {
+            quickCrafting = true;
+            quickCraftButton = button;
+            quickCraftCount = 0;
+            quickCraftType = (button == 0)? 0 : ((button == 1)? 1 : 2);
+        }
+    }
+    lastClickSlot = slot;
+    lastClickTime = now;
+    lastClickButton = button;
+}
+
+static void MouseDragged(Player *player, int mx, int my, float exactY)
+{
+    int slot = SlotAt(mx, my);
+    Stack carried = Carried(player);
+
+    if (scrolling)
+    {
+        ScrollTo(player, (exactY - (float)(topPos + 18) - 7.5f)/(112.0f - 15.0f));
+        return;
+    }
+    if (!quickCrafting || (slot < 0) || IsEmpty(carried) || InQuickCraft(slot)) return;
+    if ((carried.count <= quickCraftCount) && (quickCraftType != 2)) return;
+    if (!CanQuickReplace(GetSlot(player, &slots[slot]), carried) || !SlotMayPlace(&slots[slot], carried) || !CanDragTo(&slots[slot])) return;
+    quickCraftSlots[quickCraftCount] = slot;
+    quickCraftCount++;
+    RecalculateQuickCraft(player);
+}
+
+static void MouseReleased(Player *player, int mx, int my, int button)
+{
+    int slot = SlotAt(mx, my);
+    int target = SLOT_NONE;
+
+    if ((screen == SCREEN_CREATIVE) && (button == 0))
+    {
+        scrolling = false;
+        for (int tab = 0; tab < TAB_COUNT; tab++)
+        {
+            if (TabVisible(tab) && TabClicked(tab, mx, my))
+            {
+                SelectTab(player, tab, false);
+                return;
             }
         }
     }
-    else if ((recipe->kind == 8) && (player->craftSize == 3))
+    clickedOutside = ClickedOutside(player, mx, my);
+    target = clickedOutside? SLOT_OUTSIDE : slot;
+    if (doubleClick && (slot >= 0) && (button == 0) && CanPickAllFrom(&slots[slot]))
     {
-        for (i = 0; i < 9; i++)
+        if (ShiftDown())
         {
-            if (i == 4) continue;
-            player->craft[i] = recipe->item;
-            player->craftCount[i] = 1;
+            if (!IsEmpty(lastQuickMoved))
+            {
+                int container = SlotContainer(&slots[slot]);
+
+                for (int i = 0; i < slotCount; i++)
+                {
+                    Stack there = GetSlot(player, &slots[i]);
+
+                    if ((there.block != lastQuickMoved.block) || !SlotMayPickup(&slots[i])) continue;
+                    if (SlotContainer(&slots[i]) != container) continue;
+                    SlotClicked(player, i, button, CLICK_QUICK_MOVE);
+                }
+            }
         }
-    }
-    player->recipeIndex = index;
-}
-
-static void TakeResult(Player *player)
-{
-    BlockType out = BLOCK_AIR;
-    int outCount = 0;
-    int i = 0;
-    int n = 0;
-
-    if (!MatchCraft(player, &out, &outCount)) return;
-    if ((player->cursorBlock != BLOCK_AIR) && (player->cursorBlock != out)) return;
-    if (player->cursorBlock == out) player->cursorCount += outCount;
-    else
-    {
-        player->cursorBlock = out;
-        player->cursorCount = outCount;
-    }
-    n = player->craftSize*player->craftSize;
-    for (i = 0; i < n; i++)
-    {
-        if (player->craftCount[i] > 0) player->craftCount[i]--;
-        if (player->craftCount[i] <= 0)
-        {
-            player->craft[i] = BLOCK_AIR;
-            player->craftCount[i] = 0;
-        }
-    }
-    player->selectedBlock = out;
-}
-
-static void RememberHeld(Player *player)
-{
-    if ((player->hotbarSlot >= 0) && (player->hotbarSlot < 9))
-    {
-        player->selectedBlock = player->hotbar[player->hotbarSlot];
-    }
-}
-
-static int TextHas(const char *haystack, const char *needle)
-{
-    int i = 0;
-    int j = 0;
-
-    if ((needle == NULL) || (needle[0] == '\0')) return 1;
-    if (haystack == NULL) return 0;
-    for (i = 0; haystack[i] != '\0'; i++)
-    {
-        for (j = 0; needle[j] != '\0'; j++)
-        {
-            char a = haystack[i + j];
-            char b = needle[j];
-            if (a >= 'A' && a <= 'Z') a = (char)(a + 32);
-            if (b >= 'A' && b <= 'Z') b = (char)(b + 32);
-            if (a != b) break;
-        }
-        if (needle[j] == '\0') return 1;
-    }
-    return 0;
-}
-
-static int Catalog(const char *query, BlockType *out, int cap)
-{
-    int i = 0;
-    int n = 0;
-
-    for (i = 1; (i < BLOCK_COUNT) && (n < cap); i++)
-    {
-        BlockType block = (BlockType)i;
-        if (IsWaterBlock(block) && (block != BLOCK_WATER)) continue;
-        if (!TextHas(GetBlockName(block), query)) continue;
-        out[n++] = block;
-    }
-    return n;
-}
-
-static Rectangle GuiOrigin(const Player *player, int *scaleOut, int *panelW)
-{
-    int scale = MenuScale();
-    int guiW = 176*scale;
-    int left = player->recipeBookOpen ? 124*scale : 0;
-    int right = player->showAllItems ? 180*scale : 0;
-    int ox = (GetScreenWidth() - guiW - left - right)/2 + left;
-
-    if (scaleOut != NULL) *scaleOut = scale;
-    if (panelW != NULL) *panelW = left;
-    return (Rectangle){ (float)ox, (float)((GetScreenHeight() - 166*scale)/2), (float)guiW, (float)(166*scale) };
-}
-
-static Rectangle SlotBox(Rectangle gui, int scale, int x, int y)
-{
-    return (Rectangle){ gui.x + (float)(x*scale), gui.y + (float)(y*scale), (float)(18*scale), (float)(18*scale) };
-}
-
-static void DrawIcon(Rectangle box, int scale, BlockType block, int count)
-{
-    Texture2D atlas = { 0 };
-    float pad = 0.0f;
-
-    if ((block == BLOCK_AIR) || (count <= 0)) return;
-    pad = (float)scale;
-    atlas = GetTextureAtlas();
-    if (atlas.id > 0)
-    {
-        float u = 0.0f;
-        float v = 0.0f;
-        float w = 0.0f;
-        float h = 0.0f;
-        Rectangle src = { 0 };
-        Rectangle dest = { box.x + pad, box.y + pad, box.width - pad*2.0f, box.height - pad*2.0f };
-
-        GetBlockTextureUV(block, FACE_TOP, &u, &v, &w, &h);
-        src = (Rectangle){ u*(float)atlas.width, v*(float)atlas.height, w*(float)atlas.width, h*(float)atlas.height };
-        DrawTexturePro(atlas, src, dest, (Vector2){ 0, 0 }, 0.0f, WHITE);
+        else SlotClicked(player, slot, button, CLICK_PICKUP_ALL);
+        doubleClick = false;
+        lastClickTime = 0.0;
     }
     else
     {
-        DrawRectangle((int)(box.x + pad), (int)(box.y + pad), (int)(box.width - pad*2.0f), (int)(box.height - pad*2.0f), GetBlockColor(block));
-    }
-    if (count > 1)
-    {
-        const char *text = TextFormat("%d", count);
-        int fontSize = 8*((scale > 1) ? scale - 1 : 1);
-        int width = 0;
-
-        if (fontSize < 10) fontSize = 10;
-        width = MeasureText(text, fontSize);
-        DrawText(text, (int)(box.x + box.width - (float)width - pad), (int)(box.y + box.height - (float)fontSize - 1), fontSize, WHITE);
-    }
-}
-
-static void DrawFrame(Rectangle box, Color color)
-{
-    DrawRectangleLinesEx(box, 2.0f, color);
-}
-
-static void BlitGui(Texture2D tex, int sx, int sy, int sw, int sh, int dx, int dy, int scale)
-{
-    if (tex.id == 0) return;
-    DrawTexturePro(tex,
-        (Rectangle){ (float)sx, (float)sy, (float)sw, (float)sh },
-        (Rectangle){ (float)dx, (float)dy, (float)(sw*scale), (float)(sh*scale) },
-        (Vector2){ 0, 0 }, 0.0f, WHITE);
-}
-
-static void DrawStatusIcon(int sx, int sy, int dx, int dy, int scale)
-{
-    BlitGui(guiIcons, sx, sy, 9, 9, dx, dy, scale);
-}
-
-static void DrawGraySlot(int x, int y, int size, int hot)
-{
-    int rim = size/18;
-    if (rim < 1) rim = 1;
-    DrawRectangle(x, y, size, size, hot ? WHITE : (Color){ 55, 55, 55, 255 });
-    DrawRectangle(x + rim, y + rim, size - 2*rim, size - 2*rim, (Color){ 139, 139, 139, 255 });
-    DrawRectangle(x + rim, y + rim, size - 2*rim, rim, (Color){ 55, 55, 55, 255 });
-    DrawRectangle(x + rim, y + size - 2*rim, size - 2*rim, rim, (Color){ 255, 255, 255, 180 });
-}
-
-static void DrawSteve(int x, int y, int px)
-{
-    int head = 8*px;
-    int bodyW = 8*px;
-    int bodyH = 12*px;
-    int armW = 4*px;
-
-    if (guiSteve.id == 0) return;
-    BlitGui(guiSteve, 8, 8, 8, 8, x, y, px);
-    BlitGui(guiSteve, 40, 8, 8, 8, x, y, px);
-    BlitGui(guiSteve, 20, 20, 8, 12, x, y + head, px);
-    BlitGui(guiSteve, 44, 20, 4, 12, x - armW, y + head, px);
-    BlitGui(guiSteve, 36, 52, 4, 12, x + bodyW, y + head, px);
-    BlitGui(guiSteve, 4, 20, 4, 12, x, y + head + bodyH, px);
-    BlitGui(guiSteve, 20, 52, 4, 12, x + armW, y + head + bodyH, px);
-}
-
-void DrawHotbar(Player *player)
-{
-    int scale = MenuScale();
-    int barW = 182*scale;
-    int barH = 22*scale;
-    int x = (GetScreenWidth() - barW)/2;
-    int y = GetScreenHeight() - barH;
-    int i = 0;
-    const char *held = NULL;
-    int heldWidth = 0;
-
-    LoadGui();
-    DrawRectangle(x, y - 6*scale, barW, 5*scale, BLACK);
-    DrawRectangle(x + scale, y - 5*scale, barW - 2*scale, 3*scale, (Color){ 128, 255, 32, 255 });
-
-    for (i = 0; i < 10; i++)
-    {
-        int hx = x + scale + i*8*scale;
-        int hy = y - 16*scale;
-        int fx = x + barW - scale - 9*scale - i*8*scale;
-
-        DrawStatusIcon(16, 0, hx, hy, scale);
-        DrawStatusIcon(52, 0, hx, hy, scale);
-        DrawStatusIcon(16, 9, hx, hy - 10*scale, scale);
-        DrawStatusIcon(16, 27, fx, hy, scale);
-        DrawStatusIcon(52, 27, fx, hy, scale);
-        if (player->inWater) DrawStatusIcon(16, 18, fx, hy - 10*scale, scale);
-    }
-
-    DrawRectangle(x, y, barW, barH, (Color){ 12, 12, 12, 255 });
-    for (i = 0; i < 9; i++)
-    {
-        int sx = x + (1 + i*20)*scale;
-        int sy = y + scale;
-        int inner = 18*scale;
-        Rectangle icon = { (float)(sx + scale), (float)(sy + scale), (float)(16*scale), (float)(16*scale) };
-
-        DrawRectangle(sx, sy, 20*scale, 20*scale, (i == player->hotbarSlot) ? WHITE : (Color){ 90, 90, 90, 255 });
-        DrawRectangle(sx + scale, sy + scale, inner, inner, (Color){ 28, 28, 28, 255 });
-        if (player->hotbar[i] != BLOCK_AIR) DrawIcon(icon, scale, player->hotbar[i], 1);
-    }
-
-    DrawRectangle(x - 26*scale, y + scale, 20*scale, 20*scale, (Color){ 90, 90, 90, 255 });
-    DrawRectangle(x - 25*scale, y + 2*scale, 18*scale, 18*scale, (Color){ 28, 28, 28, 255 });
-
-    if ((player->hotbarSlot >= 0) && (player->hotbarSlot < 9) && (player->hotbar[player->hotbarSlot] != BLOCK_AIR))
-    {
-        held = GetBlockName(player->hotbar[player->hotbarSlot]);
-        heldWidth = MenuTextWidth(held, 8*scale);
-        DrawMenuText(GetScreenWidth()/2 - heldWidth/2 + scale, y - 28*scale + scale, 8*scale, held, BLACK);
-        DrawMenuText(GetScreenWidth()/2 - heldWidth/2, y - 28*scale, 8*scale, held, WHITE);
-    }
-}
-
-static void DrawRecipePanel(const Player *player, int panelW, int scale, Rectangle gui)
-{
-    int i = 0;
-    int shown = 0;
-    int fontSize = 8*scale;
-    Rectangle panel = { gui.x - (float)panelW, gui.y, (float)(panelW - 4*scale), gui.height };
-    MenuButton book = { 0 };
-
-    book.bounds = (Rectangle){ panel.x, panel.y - (float)(24*scale), (float)(panel.width), (float)(20*scale) };
-    book.label = "Recipe Book";
-    book.enabled = true;
-    book.hovered = CheckCollisionPointRec(GetMousePosition(), book.bounds);
-    DrawStoneButton(&book, player->recipeBookOpen);
-    DrawRectangleRec(panel, (Color){ 198, 198, 198, 255 });
-    DrawRectangleLinesEx(panel, (float)scale, (Color){ 55, 55, 55, 255 });
-    DrawMenuText((int)panel.x + 4*scale, (int)panel.y + 4*scale, fontSize, "Select a recipe", (Color){ 64, 64, 64, 255 });
-    for (i = 0; i < RecipeCount(); i++)
-    {
-        Rectangle row = { 0 };
-        Color color = { 48, 48, 48, 255 };
-
-        if (recipes[i].width > player->craftSize) continue;
-        row = (Rectangle){ panel.x + 4*scale, panel.y + (float)((16 + shown*14)*scale), panel.width - 8*scale, (float)(12*scale) };
-        if (i == player->recipeIndex) color = (Color){ 180, 120, 0, 255 };
-        else if (CheckCollisionPointRec(GetMousePosition(), row)) color = (Color){ 80, 80, 160, 255 };
-        DrawMenuText((int)row.x, (int)row.y, fontSize, recipes[i].name, color);
-        shown++;
-    }
-}
-
-static void DrawSlotContents(Rectangle box, int scale, BlockType block, int count, int hot)
-{
-    DrawGraySlot((int)box.x, (int)box.y, (int)box.width, hot);
-    if ((block != BLOCK_AIR) && (count > 0))
-    {
-        Rectangle icon = { box.x + (float)scale, box.y + (float)scale, box.width - 2.0f*(float)scale, box.height - 2.0f*(float)scale };
-        DrawIcon(icon, scale, block, count);
-    }
-}
-
-static Rectangle SearchPanel(Rectangle gui, int scale)
-{
-    return (Rectangle){ gui.x + gui.width + 4.0f*(float)scale, gui.y, 176.0f*(float)scale, gui.height };
-}
-
-static Rectangle SearchField(Rectangle panel, int scale)
-{
-    return (Rectangle){ panel.x + 8.0f*(float)scale, panel.y + 22.0f*(float)scale, panel.width - 16.0f*(float)scale, 16.0f*(float)scale };
-}
-
-static void DrawSearchPanel(Player *player, Rectangle panel, int scale)
-{
-    BlockType items[512];
-    int count = Catalog(player->itemSearch, items, 512);
-    int cols = 9;
-    int rows = 5;
-    int visible = cols*rows;
-    int maxScroll = 0;
-    int i = 0;
-    Vector2 mouse = GetMousePosition();
-    Rectangle field = SearchField(panel, scale);
-
-    if (count > visible) maxScroll = ((count - visible + cols - 1)/cols)*cols;
-    if (player->itemScroll < 0) player->itemScroll = 0;
-    if (player->itemScroll > maxScroll) player->itemScroll = maxScroll;
-
-    DrawRectangleRec(panel, (Color){ 198, 198, 198, 255 });
-    DrawRectangleLinesEx(panel, (float)scale, (Color){ 55, 55, 55, 255 });
-    DrawMenuText((int)panel.x + 8*scale, (int)panel.y + 6*scale, 8*scale, "Search Items", (Color){ 64, 64, 64, 255 });
-    DrawRectangleRec(field, player->searchFocused ? WHITE : (Color){ 0, 0, 0, 255 });
-    DrawMenuText((int)field.x + 2*scale, (int)field.y + 4*scale, 8*scale,
-        (player->itemSearch[0] != '\0') ? player->itemSearch : "Search...",
-        (player->itemSearch[0] != '\0') ? WHITE : (Color){ 160, 160, 160, 255 });
-    if (player->searchFocused && (player->itemSearch[0] != '\0'))
-    {
-        DrawMenuText((int)field.x + 2*scale, (int)field.y + 4*scale, 8*scale, player->itemSearch, BLACK);
-    }
-
-    for (i = 0; i < visible; i++)
-    {
-        int index = player->itemScroll + i;
-        int col = i%cols;
-        int row = i/cols;
-        Rectangle box = {
-            panel.x + (8 + col*18)*(float)scale,
-            panel.y + (44 + row*18)*(float)scale,
-            18.0f*(float)scale,
-            18.0f*(float)scale
-        };
-        BlockType block = BLOCK_AIR;
-
-        if (index < count) block = items[index];
-        DrawSlotContents(box, scale, block, (block == BLOCK_AIR) ? 0 : 1, CheckCollisionPointRec(mouse, box));
-        if ((block != BLOCK_AIR) && CheckCollisionPointRec(mouse, box))
+        if (quickCrafting && (quickCraftButton != button))
         {
-            DrawMenuText((int)panel.x + 8*scale, (int)panel.y + (int)panel.height - 14*scale, 8*scale, GetBlockName(block), (Color){ 64, 64, 64, 255 });
+            quickCrafting = false;
+            quickCraftCount = 0;
+            skipNextRelease = true;
+            return;
         }
+        if (skipNextRelease)
+        {
+            skipNextRelease = false;
+            return;
+        }
+        if (quickCrafting && (quickCraftCount > 0)) FinishQuickCraft(player);
+        else if (!IsEmpty(Carried(player)))
+        {
+            if ((button == 2) && Creative(player)) SlotClicked(player, target, button, CLICK_CLONE);
+            else
+            {
+                bool quick = (target != SLOT_OUTSIDE) && ShiftDown();
+
+                if (quick) lastQuickMoved = (slot >= 0)? GetSlot(player, &slots[slot]) : EmptyStack();
+                SlotClicked(player, target, button, quick? CLICK_QUICK_MOVE : CLICK_PICKUP);
+            }
+        }
+    }
+    if (IsEmpty(Carried(player))) lastClickTime = 0.0;
+    quickCrafting = false;
+    quickCraftCount = 0;
+}
+
+static bool HotbarKey(Player *player, int key, int hovered)
+{
+    if (!IsEmpty(Carried(player)) || (hovered < 0)) return false;
+    if (key == KEY_F)
+    {
+        SlotClicked(player, hovered, OFFHAND_BUTTON, CLICK_SWAP);
+        return true;
+    }
+    if ((key >= KEY_ONE) && (key <= KEY_NINE))
+    {
+        SlotClicked(player, hovered, key - KEY_ONE, CLICK_SWAP);
+        return true;
+    }
+    return false;
+}
+
+static void ContainerKeyPressed(Player *player, int key, int hovered)
+{
+    if (key == KEY_E)
+    {
+        InventoryClose(player);
+        return;
+    }
+    HotbarKey(player, key, hovered);
+}
+
+static void KeyPressed(Player *player, int key, int hovered)
+{
+    char before[TEXT_FIELD_CAPACITY] = { 0 };
+    bool usable = false;
+    bool numeric = (key >= KEY_ZERO) && (key <= KEY_NINE);
+
+    ignoreTextInput = false;
+    if (screen != SCREEN_CREATIVE)
+    {
+        ContainerKeyPressed(player, key, hovered);
+        return;
+    }
+    if (CurrentTabKind(player) != TAB_KIND_SEARCH)
+    {
+        if (key == KEY_T)
+        {
+            ignoreTextInput = true;
+            SelectTab(player, TAB_SEARCH, false);
+            return;
+        }
+        ContainerKeyPressed(player, key, hovered);
+        return;
+    }
+    // In the search tab number keys still swap a hovered item into the
+    // hotbar. Everything else goes to the search field, which keeps every
+    // key but Escape while it has focus.
+    usable = (hovered < 0) || (slots[hovered].kind != SLOT_PICKER) || !IsEmpty(GetSlot(player, &slots[hovered]));
+    if (usable && numeric && HotbarKey(player, key, hovered))
+    {
+        ignoreTextInput = true;
+        return;
+    }
+    memcpy(before, searchField.value, sizeof(before));
+    if (TextFieldKeyPressed(&searchField, key))
+    {
+        if (strcmp(before, searchField.value) != 0) RefreshSearch(player);
+        return;
+    }
+    if (searchField.focused && (key != KEY_ESCAPE)) return;
+    ContainerKeyPressed(player, key, hovered);
+}
+
+static void CharTyped(Player *player, int codepoint)
+{
+    char before[TEXT_FIELD_CAPACITY] = { 0 };
+
+    if ((screen != SCREEN_CREATIVE) || ignoreTextInput || (CurrentTabKind(player) != TAB_KIND_SEARCH)) return;
+    memcpy(before, searchField.value, sizeof(before));
+    if (TextFieldCharTyped(&searchField, codepoint) && (strcmp(before, searchField.value) != 0)) RefreshSearch(player);
+}
+
+static void MouseScrolled(Player *player, float wheel)
+{
+    int rows = PickerRows();
+
+    if ((screen != SCREEN_CREATIVE) || !CanScroll(player) || (rows <= 0)) return;
+    ScrollTo(player, player->creativeScroll - wheel/(float)rows);
+}
+
+//----------------------------------------------------------------------------------
+// Public
+//----------------------------------------------------------------------------------
+void InventoryOpen(Player *player, int craftSize)
+{
+    player->craftSize = (craftSize == 3)? 3 : 2;
+    if (craftSize == 3) screen = SCREEN_CRAFTING;
+    else screen = (player->gameMode == GAME_MODE_CREATIVE)? SCREEN_CREATIVE : SCREEN_INVENTORY;
+    for (int i = 0; i < 9; i++)
+    {
+        player->craft[i] = BLOCK_AIR;
+        player->craftCount[i] = 0;
+    }
+    player->inventoryOpen = true;
+    ResetMouseState();
+    if (screen == SCREEN_CREATIVE)
+    {
+        if (searchField.maxLength == 0) TextFieldInit(&searchField, 50, 80);
+        if ((player->creativeTab < 0) || (player->creativeTab >= TAB_COUNT) || !TabVisible(player->creativeTab)) player->creativeTab = TAB_BUILDING;
+        SelectTab(player, player->creativeTab, true);
+    }
+    BuildMenu(player);
+    EnableCursor();
+    SetMousePosition(GetScreenWidth()/2, GetScreenHeight()/2);
+}
+
+// Survival puts the held stack and the grid back into the inventory. The
+// creative hand only ever held copies.
+void InventoryClose(Player *player)
+{
+    Stack carried = Carried(player);
+
+    if (!player->inventoryOpen) return;
+    if ((screen != SCREEN_CREATIVE) && !IsEmpty(carried)) StowItem(player, carried.block, carried.count);
+    SetCarried(player, EmptyStack());
+    for (int i = 0; i < 9; i++)
+    {
+        if (player->craftCount[i] > 0) StowItem(player, player->craft[i], player->craftCount[i]);
+        player->craft[i] = BLOCK_AIR;
+        player->craftCount[i] = 0;
+    }
+    player->inventoryOpen = false;
+    player->searchFocused = 0;
+    TextFieldSetFocus(&searchField, false);
+    ResetMouseState();
+    DisableCursor();
+    SelectHotbarSlot(player, player->hotbarSlot);
+}
+
+void InventorySaveHotbar(Player *player, int row)
+{
+    if ((row < 0) || (row >= HOTBAR_SIZE)) return;
+    for (int col = 0; col < HOTBAR_SIZE; col++) savedHotbars[row][col] = MakeStack(player->hotbar[col], player->hotbarCount[col]);
+    HudActionBar(TextFormat("Saved hotbar (restore with X+%d)", row + 1));
+}
+
+void InventoryLoadHotbar(Player *player, int row)
+{
+    if ((row < 0) || (row >= HOTBAR_SIZE)) return;
+    for (int col = 0; col < HOTBAR_SIZE; col++) SetInventoryStack(player, col, savedHotbars[row][col]);
+    SelectHotbarSlot(player, player->hotbarSlot);
+}
+
+void InventoryHandleInput(Player *player)
+{
+    static const int repeatKeys[] = { KEY_BACKSPACE, KEY_DELETE, KEY_LEFT, KEY_RIGHT };
+    Vector2 mouse = { 0 };
+    Vector2 delta = GetMouseDelta();
+    int mx = 0;
+    int my = 0;
+    int hovered = SLOT_NONE;
+    int key = 0;
+    int codepoint = 0;
+    float wheel = 0.0f;
+
+    if (!player->inventoryOpen) return;
+    BuildMenu(player);
+    mouse = GuiMouse();
+    mx = (int)mouse.x;
+    my = (int)mouse.y;
+    for (int button = 0; (button < 3) && player->inventoryOpen; button++)
+    {
+        if (IsMouseButtonPressed(button)) MousePressed(player, mx, my, button);
+    }
+    if (((delta.x != 0.0f) || (delta.y != 0.0f)) && (IsMouseButtonDown(MOUSE_BUTTON_LEFT) || IsMouseButtonDown(MOUSE_BUTTON_RIGHT) || IsMouseButtonDown(MOUSE_BUTTON_MIDDLE)))
+    {
+        MouseDragged(player, mx, my, GetMousePosition().y/(float)GuiScale());
+    }
+    for (int button = 0; (button < 3) && player->inventoryOpen; button++)
+    {
+        if (IsMouseButtonReleased(button)) MouseReleased(player, mx, my, button);
+    }
+    hovered = SlotAt(mx, my);
+    while (player->inventoryOpen && ((key = GetKeyPressed()) != 0)) KeyPressed(player, key, hovered);
+    for (int i = 0; (i < LIST_COUNT(repeatKeys)) && player->inventoryOpen; i++)
+    {
+        if (IsKeyPressedRepeat(repeatKeys[i])) KeyPressed(player, repeatKeys[i], hovered);
+    }
+    while (player->inventoryOpen && ((codepoint = GetCharPressed()) != 0)) CharTyped(player, codepoint);
+    wheel = GetMouseWheelMove();
+    if (player->inventoryOpen && (wheel != 0.0f)) MouseScrolled(player, wheel);
+    if (player->inventoryOpen && quickCrafting) RecalculateQuickCraft(player);
+    player->searchFocused = (player->inventoryOpen && (screen == SCREEN_CREATIVE) && searchField.focused)? 1 : 0;
+    SelectHotbarSlot(player, player->hotbarSlot);
+}
+
+//----------------------------------------------------------------------------------
+// Drawing
+//----------------------------------------------------------------------------------
+static void DrawStack(Stack stack, int x, int y, const char *countText, Color countColor)
+{
+    if (IsEmpty(stack)) return;
+    GuiDrawItem(stack.block, x, y);
+    if (countText != NULL) GuiDrawItemCountText(countText, x, y, countColor);
+    else GuiDrawItemCount(stack.count, x, y);
+}
+
+static void DrawEmptyIcon(const MenuSlot *slot, int x, int y)
+{
+    static const GuiSprite armorIcons[4] = {
+        GUI_SPRITE_EMPTY_HELMET, GUI_SPRITE_EMPTY_CHESTPLATE, GUI_SPRITE_EMPTY_LEGGINGS, GUI_SPRITE_EMPTY_BOOTS
+    };
+
+    if (slot->kind == SLOT_ARMOR) GuiDrawSprite(armorIcons[slot->index], x, y);
+    else if (slot->kind == SLOT_OFFHAND) GuiDrawSprite(GUI_SPRITE_EMPTY_SHIELD, x, y);
+}
+
+static void DrawSlot(const Player *player, int index)
+{
+    const MenuSlot *slot = &slots[index];
+    int x = leftPos + slot->x;
+    int y = topPos + slot->y;
+    Stack stack = GetSlot(player, slot);
+    Stack carried = Carried(player);
+    const char *countText = NULL;
+
+    if (slot->kind == SLOT_PICKER)
+    {
+        PickerEntry entry = PickerAt(player, slot->index);
+
+        if (entry.lockedRow >= 0)
+        {
+            GuiDrawItemTexture("paper", x, y);
+            return;
+        }
+    }
+    if (quickCrafting && InQuickCraft(index) && !IsEmpty(carried))
+    {
+        int target = 0;
+
+        // Dragging over a single slot shows it empty until the button is let go.
+        if (quickCraftCount == 1) return;
+        target = QuickCraftTarget(carried, stack.count);
+        if (target > MaxStack(carried))
+        {
+            target = MaxStack(carried);
+            countText = TextFormat("%d", target);
+        }
+        stack = MakeStack(carried.block, target);
+        GuiFill(x, y, x + 16, y + 16, (Color){ 255, 255, 255, 128 });
+    }
+    if (IsEmpty(stack))
+    {
+        DrawEmptyIcon(slot, x, y);
+        return;
+    }
+    DrawStack(stack, x, y, countText, cappedCountColor);
+}
+
+static void DrawSlotFrames(void)
+{
+    for (int i = 0; i < slotCount; i++)
+    {
+        int x = leftPos + slots[i].x;
+        int y = topPos + slots[i].y;
+
+        if ((slots[i].kind == SLOT_RESULT) && (screen == SCREEN_CRAFTING)) GuiDrawSprite(GUI_SPRITE_SLOT_LARGE, x - 5, y - 5);
+        else if (slots[i].kind == SLOT_DESTROY) GuiDrawSprite(GUI_SPRITE_DESTROY_SLOT, x - 1, y - 1);
+        else GuiDrawSprite(GUI_SPRITE_SLOT, x - 1, y - 1);
+    }
+}
+
+// The arrow between the grid and the output: a head that widens one pixel a
+// row to the middle and a three-row shaft behind it.
+static void DrawCraftArrow(int x, int headX, int y, int rows)
+{
+    Color color = { 139, 139, 139, 255 };
+    int middle = rows/2;
+
+    for (int k = 0; k < rows; k++)
+    {
+        int width = (k <= middle)? k + 1 : rows - k;
+
+        GuiFill(headX, y + k, headX + width, y + k + 1, color);
+        if ((k >= middle - 1) && (k <= middle + 1)) GuiFill(x, y + k, headX, y + k + 1, color);
+    }
+}
+
+static void DrawSurvivalBackground(int mx, int my)
+{
+    GuiDrawPanel(leftPos, topPos, imageWidth, imageHeight);
+    DrawSlotFrames();
+    if (screen == SCREEN_INVENTORY)
+    {
+        DrawCraftArrow(leftPos + 135, leftPos + 144, topPos + 29, 13);
+        GuiDrawInset(leftPos + 25, topPos + 7, 51, 72, BLACK);
+        PlayerModelDraw(leftPos + 51, topPos + 75, 30, (float)(leftPos + 51 - mx), (float)(topPos + 75 - 50 - my),
+            leftPos + 26, topPos + 8, leftPos + 75, topPos + 78);
+    }
+    else DrawCraftArrow(leftPos + 90, leftPos + 104, topPos + 35, 15);
+}
+
+static void DrawTab(int tab, bool selected)
+{
+    int x = leftPos + TabX(tab);
+    int y = tabs[tab].top? topPos - 28 : topPos + CREATIVE_HEIGHT - 4;
+    GuiSprite sprite = tabs[tab].top? GUI_SPRITE_TAB_TOP : GUI_SPRITE_TAB_BOTTOM;
+
+    if (selected)
+    {
+        if (tabs[tab].top) sprite = (tabs[tab].column == 0)? GUI_SPRITE_TAB_TOP_SELECTED_FIRST :
+            ((tabs[tab].column == 6)? GUI_SPRITE_TAB_TOP_SELECTED_LAST : GUI_SPRITE_TAB_TOP_SELECTED);
+        else sprite = (tabs[tab].column == 0)? GUI_SPRITE_TAB_BOTTOM_SELECTED_FIRST :
+            ((tabs[tab].column == 6)? GUI_SPRITE_TAB_BOTTOM_SELECTED_LAST : GUI_SPRITE_TAB_BOTTOM_SELECTED);
+    }
+    GuiDrawSprite(sprite, x, y);
+    y += tabs[tab].top? 9 : 7;
+    if (tabs[tab].iconBlock != BLOCK_AIR) GuiDrawItem(tabs[tab].iconBlock, x + 5, y);
+    else if (tabs[tab].iconTexture != NULL) GuiDrawItemTexture(tabs[tab].iconTexture, x + 5, y);
+}
+
+// The search box frame is an inset like a slot with a softer top-left edge.
+static void DrawSearchFrame(int x, int y, int w, int h)
+{
+    Color edge = { 85, 85, 85, 255 };
+    Color fill = { 139, 139, 139, 255 };
+
+    GuiFill(x, y, x + w - 1, y + 1, edge);
+    GuiFill(x + w - 1, y, x + w, y + 1, fill);
+    GuiFill(x, y + 1, x + 1, y + h - 1, edge);
+    GuiFill(x + 1, y + 1, x + w - 1, y + h - 1, fill);
+    GuiFill(x + w - 1, y + 1, x + w, y + h - 1, WHITE);
+    GuiFill(x, y + h - 1, x + 1, y + h, fill);
+    GuiFill(x + 1, y + h - 1, x + w, y + h, WHITE);
+}
+
+static void DrawCreativeBackground(const Player *player, int mx, int my)
+{
+    TabKind kind = CurrentTabKind(player);
+
+    for (int tab = 0; tab < TAB_COUNT; tab++)
+    {
+        if (TabVisible(tab) && (tab != player->creativeTab)) DrawTab(tab, false);
+    }
+    GuiDrawPanel(leftPos, topPos, CREATIVE_WIDTH, CREATIVE_HEIGHT);
+    DrawSlotFrames();
+    if (kind == TAB_KIND_INVENTORY) GuiDrawInset(leftPos + 72, topPos + 5, 34, 45, BLACK);
+    else
+    {
+        GuiDrawInset(leftPos + 174, topPos + 17, 14, 112, (Color){ 139, 139, 139, 255 });
+        if (kind == TAB_KIND_SEARCH)
+        {
+            DrawSearchFrame(leftPos + 80, topPos + 4, 90, 12);
+            TextFieldDraw(&searchField, leftPos + 82, topPos + 6, WHITE);
+        }
+        GuiDrawSprite(CanScroll(player)? GUI_SPRITE_SCROLLER : GUI_SPRITE_SCROLLER_DISABLED, leftPos + 175,
+            topPos + 18 + (int)(95.0f*player->creativeScroll));
+    }
+    DrawTab(player->creativeTab, true);
+    if (kind == TAB_KIND_INVENTORY)
+    {
+        PlayerModelDraw(leftPos + 88, topPos + 45, 20, (float)(leftPos + 88 - mx), (float)(topPos + 45 - 30 - my),
+            leftPos + 73, topPos + 6, leftPos + 105, topPos + 49);
+    }
+}
+
+static void DrawLabels(const Player *player)
+{
+    if (screen == SCREEN_INVENTORY) GuiDrawText("Crafting", leftPos + 97, topPos + 6, labelColor, false);
+    else if (screen == SCREEN_CRAFTING)
+    {
+        GuiDrawText("Crafting", leftPos + 29, topPos + 6, labelColor, false);
+        GuiDrawText("Inventory", leftPos + 8, topPos + imageHeight - 94, labelColor, false);
+    }
+    else if (CurrentTabKind(player) != TAB_KIND_INVENTORY)
+    {
+        GuiDrawText(tabs[player->creativeTab].name, leftPos + 8, topPos + 6, labelColor, false);
+    }
+}
+
+static void DrawCarried(const Player *player, int mx, int my)
+{
+    Stack carried = Carried(player);
+
+    if (IsEmpty(carried)) return;
+    if (quickCrafting && (quickCraftCount > 1)) carried = MakeStack(carried.block, quickCraftRemainder);
+    DrawStack(carried, mx - 8, my - 8, NULL, WHITE);
+}
+
+// Creative adds the tabs an item belongs to under its name, except on the
+// items of the tab being browsed.
+static void DrawItemTooltip(const Player *player, int hovered, int mx, int my)
+{
+    const char *lines[TAB_COUNT + 1] = { 0 };
+    Color colors[TAB_COUNT + 1] = { 0 };
+    bool italic[TAB_COUNT + 1] = { false };
+    int count = 0;
+    const MenuSlot *slot = NULL;
+    Stack item = { 0 };
+
+    if ((hovered < 0) || !IsEmpty(Carried(player))) return;
+    slot = &slots[hovered];
+    if ((slot->kind == SLOT_PICKER) && (PickerAt(player, slot->index).lockedRow >= 0))
+    {
+        lines[0] = TextFormat("Save hotbar with C+%d", PickerAt(player, slot->index).lockedRow + 1);
+        colors[0] = WHITE;
+        italic[0] = true;
+        GuiDrawTooltipEx(lines, colors, italic, 1, mx, my);
+        return;
+    }
+    item = GetSlot(player, slot);
+    if (IsEmpty(item)) return;
+    lines[count] = GetBlockName(item.block);
+    colors[count] = WHITE;
+    count++;
+    if ((screen == SCREEN_CREATIVE) && !((slot->kind == SLOT_PICKER) && (CurrentTabKind(player) == TAB_KIND_CATEGORY)))
+    {
+        for (int tab = 0; tab < TAB_COUNT; tab++)
+        {
+            if ((tabs[tab].kind != TAB_KIND_CATEGORY) || !TabContains(tab, item.block)) continue;
+            lines[count] = tabs[tab].name;
+            colors[count] = tabNameColor;
+            count++;
+        }
+    }
+    GuiDrawTooltipEx(lines, colors, italic, count, mx, my);
+}
+
+static void DrawCreativeTooltips(const Player *player, int mx, int my)
+{
+    for (int tab = 0; tab < TAB_COUNT; tab++)
+    {
+        if (!TabVisible(tab) || !TabHovered(tab, mx, my)) continue;
+        GuiDrawTooltip(&tabs[tab].name, NULL, 1, mx, my);
+        break;
+    }
+    for (int i = 0; i < slotCount; i++)
+    {
+        const char *trash = "Destroy Item";
+
+        if ((slots[i].kind == SLOT_DESTROY) && SlotHovered(i, mx, my)) GuiDrawTooltip(&trash, NULL, 1, mx, my);
     }
 }
 
 void DrawInventory(Player *player)
 {
-    int scale = 0;
-    int panelW = 0;
-    Rectangle gui = GuiOrigin(player, &scale, &panelW);
-    int row = 0;
-    int col = 0;
-    int armor = 0;
-    BlockType result = BLOCK_AIR;
-    int resultCount = 0;
-    Vector2 mouse = GetMousePosition();
-    int portraitX = (int)gui.x + 26*scale;
-    int portraitY = (int)gui.y + 8*scale;
-    int pixel = scale;
-    MenuButton book = { 0 };
-    MenuButton allItems = { 0 };
-
-    if (pixel < 2) pixel = 2;
-    LoadGui();
-    DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(BLACK, 0.65f));
-
-    book.bounds = (Rectangle){ gui.x - (float)(78*scale), gui.y + (float)(8*scale), (float)(74*scale), (float)(20*scale) };
-    book.label = "Recipes";
-    book.enabled = true;
-    book.hovered = CheckCollisionPointRec(mouse, book.bounds);
-    DrawStoneButton(&book, player->recipeBookOpen);
-    if (player->recipeBookOpen && (panelW > 0)) DrawRecipePanel(player, panelW, scale, gui);
-
-    allItems.bounds = (Rectangle){ gui.x + gui.width - (float)(78*scale), gui.y - (float)(24*scale), (float)(74*scale), (float)(20*scale) };
-    allItems.label = player->showAllItems ? "Close" : "All Items";
-    allItems.enabled = true;
-    allItems.hovered = CheckCollisionPointRec(mouse, allItems.bounds);
-    DrawStoneButton(&allItems, player->showAllItems);
-
-    DrawRectangle((int)gui.x, (int)gui.y, (int)gui.width, (int)gui.height, (Color){ 198, 198, 198, 255 });
-    DrawRectangleLinesEx(gui, (float)scale, (Color){ 55, 55, 55, 255 });
-    DrawMenuText((int)gui.x + 96*scale, (int)gui.y + 6*scale, 8*scale, "Crafting", (Color){ 64, 64, 64, 255 });
-
-    DrawRectangle(portraitX, portraitY, 50*scale, 70*scale, BLACK);
-    DrawSteve(portraitX + 16*pixel, portraitY + 4*pixel, pixel);
-    for (armor = 0; armor < 4; armor++)
-    {
-        Rectangle box = SlotBox(gui, scale, 8, 8 + armor*18);
-        DrawSlotContents(box, scale, BLOCK_AIR, 0, 0);
-    }
-    DrawSlotContents(SlotBox(gui, scale, 77, 62), scale, BLOCK_AIR, 0, 0);
-
-    if (player->craftSize >= 3)
-    {
-        for (row = 0; row < 3; row++)
-        {
-            for (col = 0; col < 3; col++)
-            {
-                int index = row*3 + col;
-                Rectangle box = SlotBox(gui, scale, 98 + col*18, 18 + row*18);
-                DrawSlotContents(box, scale, player->craft[index], player->craftCount[index], CheckCollisionPointRec(mouse, box));
-            }
-        }
-    }
-    else
-    {
-        int coords[4][2] = { { 98, 18 }, { 116, 18 }, { 98, 36 }, { 116, 36 } };
-        for (col = 0; col < 4; col++)
-        {
-            Rectangle box = SlotBox(gui, scale, coords[col][0], coords[col][1]);
-            DrawSlotContents(box, scale, player->craft[col], player->craftCount[col], CheckCollisionPointRec(mouse, box));
-        }
-    }
-
-    MatchCraft(player, &result, &resultCount);
-    {
-        Rectangle box = (player->craftSize >= 3) ? SlotBox(gui, scale, 154, 36) : SlotBox(gui, scale, 154, 28);
-        DrawSlotContents(box, scale, result, resultCount, (result != BLOCK_AIR) && CheckCollisionPointRec(mouse, box));
-        DrawRectangle((int)box.x - 14*scale, (int)box.y + 6*scale, 10*scale, 2*scale, (Color){ 64, 64, 64, 255 });
-    }
-
-    for (row = 0; row < 3; row++)
-    {
-        for (col = 0; col < 9; col++)
-        {
-            int index = row*9 + col;
-            Rectangle box = SlotBox(gui, scale, 8 + col*18, 84 + row*18);
-            BlockType block = (index < INVENTORY_SIZE) ? player->inventory.blocks[index] : BLOCK_AIR;
-            int count = (index < INVENTORY_SIZE) ? player->inventory.quantities[index] : 0;
-            DrawSlotContents(box, scale, block, count, CheckCollisionPointRec(mouse, box));
-        }
-    }
-    for (col = 0; col < 9; col++)
-    {
-        Rectangle box = SlotBox(gui, scale, 8 + col*18, 142);
-        DrawSlotContents(box, scale, player->hotbar[col], (player->hotbar[col] == BLOCK_AIR) ? 0 : 1,
-            (col == player->hotbarSlot) || CheckCollisionPointRec(mouse, box));
-    }
-
-    if (player->showAllItems) DrawSearchPanel(player, SearchPanel(gui, scale), scale);
-
-    if ((player->cursorBlock != BLOCK_AIR) && (player->cursorCount > 0))
-    {
-        Rectangle cursor = { mouse.x - 8.0f*(float)scale, mouse.y - 8.0f*(float)scale, 16.0f*(float)scale, 16.0f*(float)scale };
-        DrawIcon(cursor, scale, player->cursorBlock, player->cursorCount);
-    }
-}
-
-static int HitStorage(Rectangle gui, int scale, Vector2 mouse, int *index)
-{
-    int row = 0;
-    int col = 0;
-
-    for (row = 0; row < 3; row++)
-    {
-        for (col = 0; col < 9; col++)
-        {
-            Rectangle box = SlotBox(gui, scale, 8 + col*18, 84 + row*18);
-            if (CheckCollisionPointRec(mouse, box))
-            {
-                *index = row*9 + col;
-                return 1;
-            }
-        }
-    }
-    return 0;
-}
-
-static int HitHotbar(Rectangle gui, int scale, Vector2 mouse, int *index)
-{
-    int col = 0;
-
-    for (col = 0; col < 9; col++)
-    {
-        Rectangle box = SlotBox(gui, scale, 8 + col*18, 142);
-        if (CheckCollisionPointRec(mouse, box))
-        {
-            *index = col;
-            return 1;
-        }
-    }
-    return 0;
-}
-
-static int HitCraft(const Player *player, Rectangle gui, int scale, Vector2 mouse, int *index)
-{
-    int row = 0;
-    int col = 0;
-
-    if (player->craftSize >= 3)
-    {
-        for (row = 0; row < 3; row++)
-        {
-            for (col = 0; col < 3; col++)
-            {
-                Rectangle box = SlotBox(gui, scale, 98 + col*18, 18 + row*18);
-                if (CheckCollisionPointRec(mouse, box))
-                {
-                    *index = row*3 + col;
-                    return 1;
-                }
-            }
-        }
-        return 0;
-    }
-    {
-        int coords[4][2] = { { 98, 18 }, { 116, 18 }, { 98, 36 }, { 116, 36 } };
-        for (col = 0; col < 4; col++)
-        {
-            Rectangle box = SlotBox(gui, scale, coords[col][0], coords[col][1]);
-            if (CheckCollisionPointRec(mouse, box))
-            {
-                *index = col;
-                return 1;
-            }
-        }
-    }
-    return 0;
-}
-
-static int HitResult(const Player *player, Rectangle gui, int scale, Vector2 mouse)
-{
-    Rectangle box = (player->craftSize >= 3) ? SlotBox(gui, scale, 154, 36) : SlotBox(gui, scale, 154, 28);
-    return CheckCollisionPointRec(mouse, box);
-}
-
-static int HitRecipe(const Player *player, int panelW, int scale, Rectangle gui, Vector2 mouse)
-{
-    int i = 0;
-    int shown = 0;
-    Rectangle panel = { gui.x - (float)panelW, gui.y, (float)(panelW - 4*scale), gui.height };
-
-    if (!player->recipeBookOpen) return -1;
-    for (i = 0; i < RecipeCount(); i++)
-    {
-        Rectangle row = { 0 };
-        if (recipes[i].width > player->craftSize) continue;
-        row = (Rectangle){ panel.x + 4*scale, panel.y + (float)((16 + shown*14)*scale), panel.width - 8*scale, (float)(12*scale) };
-        if (CheckCollisionPointRec(mouse, row)) return i;
-        shown++;
-    }
-    return -1;
-}
-
-static void ClickHotbar(Player *player, int index)
-{
-    BlockType slot = player->hotbar[index];
-
-    if ((player->cursorBlock == BLOCK_AIR) || (player->cursorCount <= 0))
-    {
-        if (slot == BLOCK_AIR) return;
-        player->cursorBlock = slot;
-        player->cursorCount = 1;
-        player->hotbar[index] = BLOCK_AIR;
-    }
-    else
-    {
-        player->hotbar[index] = player->cursorBlock;
-        player->cursorCount--;
-        if (player->cursorCount <= 0)
-        {
-            player->cursorBlock = BLOCK_AIR;
-            player->cursorCount = 0;
-        }
-    }
-    player->hotbarSlot = index;
-    RememberHeld(player);
-}
-
-static int HitCatalog(Player *player, Rectangle panel, int scale, Vector2 mouse, BlockType *block)
-{
-    BlockType items[512];
-    int count = Catalog(player->itemSearch, items, 512);
-    int cols = 9;
-    int rows = 5;
-    int i = 0;
-
-    for (i = 0; i < cols*rows; i++)
-    {
-        int index = player->itemScroll + i;
-        int col = i%cols;
-        int row = i/cols;
-        Rectangle box = {
-            panel.x + (8 + col*18)*(float)scale,
-            panel.y + (44 + row*18)*(float)scale,
-            18.0f*(float)scale,
-            18.0f*(float)scale
-        };
-
-        if (!CheckCollisionPointRec(mouse, box)) continue;
-        if (index >= count) return 0;
-        *block = items[index];
-        return 1;
-    }
-    return 0;
-}
-
-static void TypeSearch(Player *player)
-{
-    int len = (int)strlen(player->itemSearch);
-    int key = GetCharPressed();
-
-    while (key > 0)
-    {
-        if ((key >= 32) && (key < 127) && (len < (int)sizeof(player->itemSearch) - 1))
-        {
-            player->itemSearch[len] = (char)key;
-            len++;
-            player->itemSearch[len] = '\0';
-            player->itemScroll = 0;
-        }
-        key = GetCharPressed();
-    }
-    if ((IsKeyPressed(KEY_BACKSPACE) || IsKeyPressedRepeat(KEY_BACKSPACE)) && (len > 0))
-    {
-        player->itemSearch[len - 1] = '\0';
-        player->itemScroll = 0;
-    }
-}
-
-void InventoryHandleInput(Player *player)
-{
-    int scale = 0;
-    int panelW = 0;
-    Rectangle gui = { 0 };
-    Vector2 mouse = GetMousePosition();
-    int index = 0;
-    MenuButton book = { 0 };
-    MenuButton allItems = { 0 };
-    Rectangle panel = { 0 };
-    BlockType picked = BLOCK_AIR;
+    Vector2 mouse = GuiMouse();
+    int mx = (int)mouse.x;
+    int my = (int)mouse.y;
+    int hovered = SLOT_NONE;
 
     if (!player->inventoryOpen) return;
-    gui = GuiOrigin(player, &scale, &panelW);
-    book.bounds = (Rectangle){ gui.x - (float)(78*scale), gui.y + (float)(8*scale), (float)(74*scale), (float)(20*scale) };
-    book.label = "Recipes";
-    book.enabled = true;
-    allItems.bounds = (Rectangle){ gui.x + gui.width - (float)(78*scale), gui.y - (float)(24*scale), (float)(74*scale), (float)(20*scale) };
-    allItems.label = player->showAllItems ? "Close" : "All Items";
-    allItems.enabled = true;
-    UpdateMenuButton(&book);
-    UpdateMenuButton(&allItems);
-    if (book.clicked)
+    BuildMenu(player);
+    GuiBegin();
+    GuiFillGradient(0, 0, GuiWidth(), GuiHeight(), (Color){ 16, 16, 16, 192 }, (Color){ 16, 16, 16, 208 });
+    if (screen == SCREEN_CREATIVE) DrawCreativeBackground(player, mx, my);
+    else DrawSurvivalBackground(mx, my);
+    for (int i = 0; i < slotCount; i++)
     {
-        player->recipeBookOpen = !player->recipeBookOpen;
-        PlaySound(fxCoin);
-        return;
+        DrawSlot(player, i);
+        if (!SlotHovered(i, mx, my)) continue;
+        hovered = i;
+        GuiDrawSlotHighlight(leftPos + slots[i].x, topPos + slots[i].y);
     }
-    if (allItems.clicked)
-    {
-        player->showAllItems = !player->showAllItems;
-        player->searchFocused = player->showAllItems;
-        PlaySound(fxCoin);
-        return;
-    }
-
-    if (player->showAllItems)
-    {
-        panel = SearchPanel(gui, scale);
-        if (CheckCollisionPointRec(mouse, panel))
-        {
-            float wheel = GetMouseWheelMove();
-            if (wheel > 0.0f) player->itemScroll -= 9;
-            if (wheel < 0.0f) player->itemScroll += 9;
-            if (player->itemScroll < 0) player->itemScroll = 0;
-        }
-    }
-    if (player->searchFocused) TypeSearch(player);
-    if (!IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) return;
-
-    if (player->showAllItems && CheckCollisionPointRec(mouse, SearchField(panel, scale)))
-    {
-        player->searchFocused = 1;
-        return;
-    }
-    player->searchFocused = 0;
-    if (player->showAllItems && HitCatalog(player, panel, scale, mouse, &picked))
-    {
-        player->cursorBlock = picked;
-        player->cursorCount = 64;
-        PlaySound(fxCoin);
-        return;
-    }
-    index = HitRecipe(player, panelW, scale, gui, mouse);
-    if (index >= 0)
-    {
-        FillRecipe(player, index);
-        PlaySound(fxCoin);
-        return;
-    }
-    if (HitResult(player, gui, scale, mouse))
-    {
-        TakeResult(player);
-        PlaySound(fxCoin);
-        return;
-    }
-    if (HitCraft(player, gui, scale, mouse, &index))
-    {
-        ClickStack(&player->craft[index], &player->craftCount[index], player);
-        if (player->craftCount[index] <= 0) player->craft[index] = BLOCK_AIR;
-        return;
-    }
-    if (HitStorage(gui, scale, mouse, &index) && (index >= 0) && (index < INVENTORY_SIZE))
-    {
-        ClickStack(&player->inventory.blocks[index], &player->inventory.quantities[index], player);
-        return;
-    }
-    if (HitHotbar(gui, scale, mouse, &index)) ClickHotbar(player, index);
-}
-
-int GetInventorySlotAtMouse(Vector2 mousePos)
-{
-    int scale = 0;
-    int panelW = 0;
-    Rectangle gui = { 0 };
-    int index = 0;
-    Player dummy = { 0 };
-
-    dummy.recipeBookOpen = 0;
-    dummy.craftSize = 2;
-    gui = GuiOrigin(&dummy, &scale, &panelW);
-    if (HitStorage(gui, scale, mousePos, &index)) return index;
-    return -1;
+    DrawLabels(player);
+    DrawCarried(player, mx, my);
+    if (screen == SCREEN_CREATIVE) DrawCreativeTooltips(player, mx, my);
+    DrawItemTooltip(player, hovered, mx, my);
+    GuiEnd();
 }

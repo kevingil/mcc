@@ -31,18 +31,21 @@ void HandleBlockBreaking(Player* player, VoxelWorld* world);
 bool RaycastToBlock(Vector3 origin, Vector3 direction, VoxelWorld* world, BlockPos* hitBlock, Vector3* hitNormal);
 
 // UI functions
-void DrawPlayerUI(Player* player);
-void DrawCrosshair(void);
-void DrawHotbar(Player* player);
 void DrawBlockOutline(BlockPos position);
-void DrawBlockDebugInfo(Player* player, VoxelWorld* world);
+void SelectHotbarSlot(Player* player, int slot);
+int StowItem(Player* player, BlockType block, int count);
 
-// Inventory functions
+// Inventory functions. craftSize 3 opens the crafting table, 2 the player's
+// own screen (the creative tabs in creative mode).
+void InventoryOpen(Player* player, int craftSize);
 void DrawInventory(Player* player);
 void InventoryHandleInput(Player* player);
 void InventoryClose(Player* player);
-int GetInventorySlotAtMouse(Vector2 mousePos);
+void InventorySaveHotbar(Player* player, int row);
+void InventoryLoadHotbar(Player* player, int row);
 const char* GetBlockName(BlockType block);
+// The Java Edition item id without its namespace, such as "grass_block".
+const char* GetBlockId(BlockType block);
 
 #ifdef __cplusplus
 }
