@@ -42,5 +42,7 @@ int BiomeCount(void);
 int BiomeTourIndex(void);
 void BiomeTourTick(float dt);
 const Biome *BiomeAt(int x, int z);
+void BiomeClimate(int x, int z, float *temperature, float *humidity, float *continentalness, float *erosion, float *weirdness);
+float BiomeRiverMask(int x, int z);
 
 #endif
